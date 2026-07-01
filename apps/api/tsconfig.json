@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // NestJS 데코레이터(@Controller/@Injectable) 사용을 위해 필요.
+    // apps/api 는 "type":"module" (ESM). base 의 NodeNext 설정을 유지한다.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

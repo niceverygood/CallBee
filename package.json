@@ -1,0 +1,24 @@
+{
+  "name": "colli-bobi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BoBi 고객센터 — AI 인바운드 콜 응대 (project codename: Colli-BoBi)",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @colli/db generate",
+    "db:migrate": "pnpm --filter @colli/db migrate"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "prisma", "@prisma/client", "@prisma/engines"]
+  }
+}

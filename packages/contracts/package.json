@@ -1,0 +1,24 @@
+{
+  "name": "@colli/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Colli-BoBi 공유 계약: 타입 · tool 스키마 · 웹훅 이벤트 · 카카오 템플릿 키 (단일 소스)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"(contracts) no runtime tests\" && exit 0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

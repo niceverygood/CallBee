@@ -1,0 +1,29 @@
+{
+  "name": "@colli/dialogue",
+  "version": "0.1.0",
+  "private": true,
+  "description": "대화 정책: system prompt · 의도 분류 · tool 라우팅/에스컬레이션 (Worker B)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colli/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
