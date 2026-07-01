@@ -145,7 +145,10 @@ const isEntry =
 if (isEntry) {
   seedBobiTenant()
     .then(async ({ tenantId }) => {
-      await backfillExistingTablesToBobiTenant(tenantId);
+      // 이번 배포는 tenantId 가 처음부터 NOT NULL 인 단일 init 마이그레이션이라
+      // 백필할 기존 row 가 없다(신규 DB). backfillExistingTablesToBobiTenant 는
+      // "nullable → 백필 → NOT NULL" 점진적 마이그레이션 경로용으로 남겨두되
+      // 여기서는 호출하지 않는다.
       // eslint-disable-next-line no-console
       console.log(`[seed-bobi-tenant] done. tenantId=${tenantId}`);
       await prisma.$disconnect();
