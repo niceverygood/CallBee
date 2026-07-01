@@ -28,7 +28,7 @@ export function OnboardingPage() {
   };
 
   return (
-    <div>
+    <div className="min-h-screen bg-slate-50 p-6">
       <PageHeader
         title="온보딩"
         subtitle="업체명·업종·070 번호를 신청하면 새 테넌트가 생성됩니다 (목 데이터)."
