@@ -5,7 +5,7 @@
   "description": "ClawOps 인바운드 세션 핸들러 + 웹훅 라우트 + Voice Agent 어댑터 (Worker A)",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm --filter @colli/contracts build && pnpm --filter @colli/dialogue build && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "demo": "tsx src/session/demo.ts",

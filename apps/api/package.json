@@ -5,7 +5,7 @@
   "description": "NestJS tools 구현 + BoBi read 어댑터 + KB/티켓/콜백 서비스 (Worker C)",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm --filter @colli/contracts build && tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
