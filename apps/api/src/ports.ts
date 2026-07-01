@@ -123,6 +123,12 @@ export interface KnowledgeRepository {
   /** 카테고리(선택) + 키워드 매칭. 점수 내림차순. */
   search(query: string, category?: TicketCategory): Promise<KnowledgeHit[]>;
   list(category?: TicketCategory): Promise<KnowledgeRecord[]>;
+  getById(id: KnowledgeItemId): Promise<KnowledgeRecord | null>;
+  update(
+    id: KnowledgeItemId,
+    patch: Partial<CreateKnowledgeInput>,
+  ): Promise<KnowledgeRecord>;
+  delete(id: KnowledgeItemId): Promise<void>;
 }
 
 // ── 콜백 큐 저장소 ──────────────────────────────────────────────

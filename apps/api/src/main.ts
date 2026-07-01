@@ -1,15 +1,17 @@
 /**
  * NestJS 부트스트랩. Worker C 는 tool 엔드포인트만 노출한다.
- * 주의: 여기서 실인프라(Postgres/Redis/Kakao) 포트 배선은 하지 않는다
- * (통합 시 Orchestrator/Worker A 가 ToolsModule 토큰을 override).
+ * DATA_ADAPTER=prisma 환경변수로 라이브 Postgres(Supabase) 어댑터로 스왑할 수
+ * 있다(tenant.module.ts/tools.module.ts 참조). .env 는 dotenv/config 로 로드된다.
  * CI/유닛테스트는 이 파일을 실행하지 않는다(ToolsService 를 직접 인스턴스화).
  */
+import "dotenv/config";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  app.enableCors();
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console

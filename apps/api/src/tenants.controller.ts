@@ -17,6 +17,7 @@ import type {
   TenantAgentConfig,
   TenantIntentDefinition,
   CustomToolDefinition,
+  KnowledgeItemId,
 } from "@colli/contracts";
 import type {
   TenantRepository,
@@ -24,12 +25,15 @@ import type {
   TenantIntentRepository,
   CustomToolRepository,
 } from "./tenant.ports.js";
+import type { KnowledgeRepository, KnowledgeRecord } from "./ports.js";
+import { PrismaKnowledgeRepository } from "./adapters/prisma.js";
 import { TenantResolverService } from "./tenant-resolver.service.js";
 import {
   TENANT_REPO,
   TENANT_AGENT_CONFIG_REPO,
   TENANT_INTENT_REPO,
   CUSTOM_TOOL_REPO,
+  KNOWLEDGE_REPO,
 } from "./tokens.js";
 import {
   validateCustomToolName,
@@ -37,6 +41,27 @@ import {
   validateWebhookUrl,
   WebhookValidationError,
 } from "./webhook-validation.js";
+
+/** apps/console 의 KnowledgeItem shape (types.ts) — id/category/question/answer/tags/updatedAt. */
+export interface KnowledgeItemDto {
+  id: string;
+  category: string;
+  question: string;
+  answer: string;
+  tags: string[];
+  updatedAt: string;
+}
+
+function toKnowledgeItemDto(rec: KnowledgeRecord): KnowledgeItemDto {
+  return {
+    id: rec.id,
+    category: rec.category,
+    question: rec.question,
+    answer: rec.answer,
+    tags: rec.keywords,
+    updatedAt: rec.updatedAt.toISOString(),
+  };
+}
 
 export type ApiResult<T> =
   | { ok: true; data: T }
@@ -58,8 +83,30 @@ export class TenantsController {
     private readonly agentConfigs: TenantAgentConfigRepository,
     @Inject(TENANT_INTENT_REPO) private readonly intents: TenantIntentRepository,
     @Inject(CUSTOM_TOOL_REPO) private readonly customTools: CustomToolRepository,
-    private readonly resolver: TenantResolverService,
+    @Inject(KNOWLEDGE_REPO) private readonly knowledge: KnowledgeRepository,
+    // 명시적 @Inject(TenantResolverService): esbuild(tsx) 는 emitDecoratorMetadata
+    // 를 지원하지 않아 design:paramtypes 가 비어 NestJS 가 타입만으로 이 값을
+    // 해석하지 못한다(라이브 서버를 tsx 로 직접 실행할 때 undefined 로 주입되는
+    // 문제를 재현/수정). tsc 로 빌드한 dist 실행 시엔 원래도 타입 기반 해석이
+    // 가능했지만, 명시적 @Inject 를 추가해도 무해하며 두 실행 경로 모두에서
+    // 안전하게 동작한다.
+    @Inject(TenantResolverService) private readonly resolver: TenantResolverService,
   ) {}
+
+  /**
+   * KB 라우트가 쓸 KnowledgeRepository 를 고른다.
+   * DATA_ADAPTER=prisma 일 때는 DI 로 주입된 단일 인스턴스(KNOWLEDGE_REPO,
+   * tenant.module.ts 상단 주석 참조) 대신 경로의 :id 로 직접 테넌트
+   * 스코프된 PrismaKnowledgeRepository 를 만든다 — KnowledgeItem 이
+   * tenantId 필수 FK 라 이렇게 해야 테넌트 격리가 보장된다. 그 외(인메모리/
+   * 테스트)는 생성자로 주입된 인스턴스를 그대로 쓴다.
+   */
+  private kbRepoFor(tenantId: string): KnowledgeRepository {
+    if (process.env.DATA_ADAPTER === "prisma") {
+      return new PrismaKnowledgeRepository(tenantId as TenantId);
+    }
+    return this.knowledge;
+  }
 
   // ── 070 라우팅 조회(apps/voice 가 호출) ─────────────────────────
   @Get("resolve")
@@ -295,5 +342,87 @@ export class TenantsController {
   ): Promise<ApiResult<{ deleted: boolean }>> {
     const deleted = await this.customTools.delete(id as TenantId, toolId as never);
     return { ok: true, data: { deleted } };
+  }
+
+  // ── 테넌트 KB(FAQ) CRUD ──────────────────────────────────────
+  // kbRepoFor(id) 로 요청마다 테넌트 스코프된 저장소를 얻는다(위 헬퍼 참조).
+  @Get(":id/kb")
+  async listKb(@Param("id") id: string): Promise<ApiResult<KnowledgeItemDto[]>> {
+    const list = await this.kbRepoFor(id).list();
+    return { ok: true, data: list.map(toKnowledgeItemDto) };
+  }
+
+  @Post(":id/kb")
+  async createKb(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      category: string;
+      question: string;
+      answer: string;
+      tags?: string[];
+    },
+  ): Promise<ApiResult<KnowledgeItemDto>> {
+    try {
+      if (!body.category?.trim() || !body.question?.trim() || !body.answer?.trim()) {
+        throw new WebhookValidationError(
+          "invalid_params",
+          "category, question, answer are required",
+        );
+      }
+      const rec = await this.kbRepoFor(id).create({
+        category: body.category as never,
+        question: body.question,
+        answer: body.answer,
+        keywords: body.tags ?? [],
+      });
+      return { ok: true, data: toKnowledgeItemDto(rec) };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
+  @Put(":id/kb/:kbId")
+  async updateKb(
+    @Param("id") id: string,
+    @Param("kbId") kbId: string,
+    @Body()
+    body: {
+      category?: string;
+      question?: string;
+      answer?: string;
+      tags?: string[];
+    },
+  ): Promise<ApiResult<KnowledgeItemDto>> {
+    try {
+      const repo = this.kbRepoFor(id);
+      const existing = await repo.getById(kbId as KnowledgeItemId);
+      if (!existing) {
+        return { ok: false, error: { code: "kb_not_found", message: `no kb item: ${kbId}` } };
+      }
+      const rec = await repo.update(kbId as KnowledgeItemId, {
+        category: body.category as never,
+        question: body.question,
+        answer: body.answer,
+        keywords: body.tags,
+      });
+      return { ok: true, data: toKnowledgeItemDto(rec) };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
+  @Delete(":id/kb/:kbId")
+  async deleteKb(
+    @Param("id") id: string,
+    @Param("kbId") kbId: string,
+  ): Promise<ApiResult<{ deleted: boolean }>> {
+    const repo = this.kbRepoFor(id);
+    const existing = await repo.getById(kbId as KnowledgeItemId);
+    if (!existing) {
+      return { ok: true, data: { deleted: false } };
+    }
+    await repo.delete(kbId as KnowledgeItemId);
+    return { ok: true, data: { deleted: true } };
   }
 }

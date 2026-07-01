@@ -82,8 +82,14 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/
 
 export const IS_FIXTURE = DATA_SOURCE !== "fetch";
 
-/** 콘솔이 다루는 "현재 로그인한 테넌트" 목 식별자(실제 인증 붙기 전까지 고정). */
-export const DEFAULT_TENANT_ID: string = BOBI_TENANT_ID as unknown as string;
+/**
+ * 콘솔이 다루는 "현재 로그인한 테넌트" 식별자(실제 인증 붙기 전까지 고정).
+ * fixture 모드는 fixtures.ts 의 목 ID, fetch 모드는 실제 DB의 cuid 가 필요하므로
+ * VITE_DEFAULT_TENANT_ID 로 오버라이드 가능하게 한다(실 인증 붙으면 이 상수는 제거).
+ */
+export const DEFAULT_TENANT_ID: string =
+  (import.meta.env.VITE_DEFAULT_TENANT_ID as string | undefined) ??
+  (BOBI_TENANT_ID as unknown as string);
 
 // ── Fixture 구현 (dev 기본) ─────────────────────────────────────
 function makeFixtureApi(): ConsoleApi {
@@ -278,6 +284,15 @@ function makeFixtureApi(): ConsoleApi {
 }
 
 // ── Fetch 구현 (실제 백엔드 통합) ───────────────────────────────
+// apps/api 는 모든 라우트를 {ok:true,data}|{ok:false,error} 봉투(ToolInvocationResult
+// 와 동일 컨벤션)로 응답한다. 콘솔 클라이언트는 여기서 그 봉투를 벗겨 순수 데이터만
+// ConsoleApi 인터페이스로 흘려보낸다.
+interface ApiEnvelope<T> {
+  ok: boolean;
+  data?: T;
+  error?: { code: string; message: string };
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -287,7 +302,17 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`API ${init?.method ?? "GET"} ${path} → ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const body = (await res.json()) as ApiEnvelope<T> | T;
+  if (body && typeof body === "object" && "ok" in body) {
+    const envelope = body as ApiEnvelope<T>;
+    if (!envelope.ok) {
+      throw new Error(
+        `API ${init?.method ?? "GET"} ${path} → ${envelope.error?.code ?? "error"}: ${envelope.error?.message ?? "unknown error"}`,
+      );
+    }
+    return envelope.data as T;
+  }
+  return body as T;
 }
 
 function makeFetchApi(): ConsoleApi {

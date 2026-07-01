@@ -179,6 +179,36 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
     });
     return rows.map(toKnowledgeRecord);
   }
+
+  async getById(id: KnowledgeItemId): Promise<KnowledgeRecord | null> {
+    const rec = await this.db.knowledgeItem.findUnique({
+      where: { id, tenantId: this.tenantId },
+    });
+    return rec ? toKnowledgeRecord(rec) : null;
+  }
+
+  async update(
+    id: KnowledgeItemId,
+    patch: Partial<CreateKnowledgeInput>,
+  ): Promise<KnowledgeRecord> {
+    const rec = await this.db.knowledgeItem.update({
+      where: { id, tenantId: this.tenantId },
+      data: {
+        category: patch.category,
+        question: patch.question,
+        answer: patch.answer,
+        keywords: patch.keywords,
+        enabled: patch.enabled,
+      },
+    });
+    return toKnowledgeRecord(rec);
+  }
+
+  async delete(id: KnowledgeItemId): Promise<void> {
+    await this.db.knowledgeItem.delete({
+      where: { id, tenantId: this.tenantId },
+    });
+  }
 }
 
 function toKnowledgeRecord(rec: {

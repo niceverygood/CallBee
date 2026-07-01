@@ -190,6 +190,34 @@ export class InMemoryKnowledgeRepository implements KnowledgeRepository {
     if (category) out = out.filter((k) => k.category === category);
     return out.map((k) => ({ ...k }));
   }
+
+  async getById(id: KnowledgeItemId): Promise<KnowledgeRecord | null> {
+    const rec = this.store.get(id);
+    return rec ? { ...rec } : null;
+  }
+
+  async update(
+    id: KnowledgeItemId,
+    patch: Partial<CreateKnowledgeInput>,
+  ): Promise<KnowledgeRecord> {
+    const cur = this.store.get(id);
+    if (!cur) throw new Error(`knowledge item not found: ${id}`);
+    const updated: KnowledgeRecord = {
+      ...cur,
+      category: patch.category ?? cur.category,
+      question: patch.question ?? cur.question,
+      answer: patch.answer ?? cur.answer,
+      keywords: patch.keywords ?? cur.keywords,
+      enabled: patch.enabled ?? cur.enabled,
+      updatedAt: new Date(),
+    };
+    this.store.set(id, updated);
+    return { ...updated };
+  }
+
+  async delete(id: KnowledgeItemId): Promise<void> {
+    this.store.delete(id);
+  }
 }
 
 function tokenize(s: string): string[] {

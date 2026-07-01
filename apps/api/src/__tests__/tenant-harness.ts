@@ -8,7 +8,7 @@ import {
   InMemoryCustomToolRepository,
   InMemoryWebhookToolInvoker,
 } from "../adapters/tenant-in-memory.js";
-import { InMemoryTrace } from "../adapters/in-memory.js";
+import { InMemoryTrace, InMemoryKnowledgeRepository } from "../adapters/in-memory.js";
 import { TenantResolverService } from "../tenant-resolver.service.js";
 import { CustomToolExecutor } from "../custom-tool-executor.service.js";
 import { TenantsController } from "../tenants.controller.js";
@@ -20,6 +20,7 @@ export function makeTenantHarness() {
   const customTools = new InMemoryCustomToolRepository();
   const webhookInvoker = new InMemoryWebhookToolInvoker();
   const trace = new InMemoryTrace();
+  const knowledge = new InMemoryKnowledgeRepository();
 
   const resolver = new TenantResolverService({
     tenants,
@@ -39,6 +40,7 @@ export function makeTenantHarness() {
     agentConfigs,
     intents,
     customTools,
+    knowledge,
     resolver,
   );
 
@@ -49,6 +51,7 @@ export function makeTenantHarness() {
     customTools,
     webhookInvoker,
     trace,
+    knowledge,
     resolver,
     executor,
     controller,
