@@ -10,6 +10,7 @@
  * 실행은 세션 핸들러가 ToolClient(→ Worker C)로 위임한다.
  */
 import type {
+  RuntimeToolSchema,
   ToolName,
   ToolParams,
   ToolResult,
@@ -34,10 +35,19 @@ export type VoiceAgentEvent =
     };
 
 export interface VoiceAgentSessionConfig {
-  /** Worker B 소유. 여기선 주입 지점(placeholder)만 보유. */
+  /**
+   * 세션에 바인딩할 system prompt. v1 에서는 Worker B 소유 placeholder 고정값을
+   * 그대로 썼으나, v2(멀티테넌트)부터는 세션 핸들러가 070 조회 결과
+   * (`ResolvedTenantAgentContext`)로 조립한 테넌트별 문자열을 넘긴다.
+   */
   systemPrompt: string;
-  /** 계약의 tool 스키마. 로컬 재정의 금지 → contracts 에서만. */
-  tools: typeof TOOL_SCHEMA_LIST;
+  /**
+   * 세션에 바인딩할 tool 스키마 배열. v1 고정 `TOOL_SCHEMA_LIST` 또는
+   * v2 `RuntimeToolSchema[]`(시스템 tool ∪ 테넌트 커스텀 tool 병합 결과,
+   * @colli/contracts 의 `ResolvedTenantAgentContext.toolSchemas`) 모두 허용한다.
+   * 로컬 재정의 금지 → contracts 에서만.
+   */
+  tools: typeof TOOL_SCHEMA_LIST | RuntimeToolSchema[];
   mode: VoiceAgentMode;
 }
 

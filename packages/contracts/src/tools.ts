@@ -22,6 +22,13 @@ import type {
 import type { KakaoTemplateKey, KakaoTemplateVars } from "./kakao.js";
 
 // ── tool 이름 ───────────────────────────────────────────────────
+// v1(BoBi 전용)에서는 이 8개가 "전체 tool 목록"이었다. v2(멀티테넌트)에서는
+// 이 8개가 "플랫폼이 모든 테넌트에게 기본 제공하는 시스템 tool 카탈로그"로
+// 재해석된다 — 테넌트별 커스텀 tool(webhook 기반, @colli/contracts/tenant.ts 의
+// CustomToolDefinition)이 여기에 런타임에 추가된다.
+// `TOOL_NAMES`/`ToolName` 은 하위호환을 위해 삭제하지 않고 그대로 유지한다
+// (packages/dialogue 의 48개 테스트가 이 이름으로 직접 import 한다).
+// 신규 코드는 의미가 더 명확한 `SYSTEM_TOOL_NAMES`/`SystemToolName` 별칭을 쓴다.
 export const TOOL_NAMES = [
   "lookup_subscriber",
   "get_kb_answer",
@@ -33,6 +40,11 @@ export const TOOL_NAMES = [
   "send_kakao_alimtalk",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+/** `TOOL_NAMES` 의 하위호환 별칭 — "플랫폼 시스템 tool 카탈로그"라는 의미를 명시. */
+export const SYSTEM_TOOL_NAMES = TOOL_NAMES;
+/** `ToolName` 의 하위호환 별칭. */
+export type SystemToolName = ToolName;
 
 // ── 각 tool 의 파라미터 / 결과 ──────────────────────────────────
 
@@ -154,8 +166,16 @@ export type ToolInvocationResult<T extends ToolName = ToolName> =
 
 // ── LLM function-calling JSON 스키마 ────────────────────────────
 // OpenAI Realtime / Chat function 정의로 그대로 사용 가능한 형태.
-export interface ToolJsonSchema {
-  name: ToolName;
+
+/**
+ * `name` 을 좁히지 않은 공용 베이스 shape. 시스템 tool(`ToolJsonSchema`,
+ * name: ToolName 고정)과 테넌트 커스텀 tool(name: string, 런타임 결정)이
+ * 런타임에 하나의 배열로 병합되어야 하므로(`buildRuntimeToolList` 참조),
+ * 병합 결과 원소 타입의 공통 상위 타입으로 사용한다.
+ * `@colli/contracts/tenant.ts` 의 `CustomToolJsonSchema` 가 이를 확장한다.
+ */
+export interface ToolJsonSchemaBase {
+  name: string;
   description: string;
   parameters: {
     type: "object";
@@ -163,6 +183,10 @@ export interface ToolJsonSchema {
     required?: string[];
     additionalProperties: false;
   };
+}
+
+export interface ToolJsonSchema extends ToolJsonSchemaBase {
+  name: ToolName;
 }
 
 export const TOOL_SCHEMAS: Record<ToolName, ToolJsonSchema> = {
@@ -325,3 +349,28 @@ export const TOOL_SCHEMAS: Record<ToolName, ToolJsonSchema> = {
 export const TOOL_SCHEMA_LIST: ToolJsonSchema[] = TOOL_NAMES.map(
   (n) => TOOL_SCHEMAS[n],
 );
+
+// ── 런타임 tool 목록 조립(시스템 tool ∪ 테넌트 커스텀 tool) ─────
+/**
+ * 세션에 바인딩할 최종 tool 목록의 원소 shape. `kind` 로 실행 디스패치를
+ * 분기한다(apps/api: kind="system" → 기존 ToolsService, kind="custom" →
+ * webhook 프록시). 구현은 apps/api 몫이며 여기서는 시그니처만 계약으로 고정한다.
+ */
+export type RuntimeToolSchema =
+  | (ToolJsonSchema & { kind: "system" })
+  | (ToolJsonSchemaBase & { kind: "custom" });
+
+/**
+ * "시스템 tool 카탈로그(TOOL_SCHEMA_LIST, 항상 전체 포함) + 테넌트 커스텀 tool
+ * (enabled 인 것만)"을 병합해 LLM 세션에 넘길 최종 배열을 만드는 함수 시그니처.
+ * 구현은 apps/api(ToolsController 인접) 몫 — 여기서는 타입만 고정한다.
+ *
+ * 병합 규칙(구현 시 반드시 지킬 것, apps/api 브리핑 참조):
+ * - 이름 충돌 시 시스템 tool 이 항상 우선(테넌트가 SYSTEM_TOOL_NAMES 와 같은
+ *   이름의 커스텀 tool 을 등록하는 것 자체를 저장 시점에 막는 것이 1차 방어선,
+ *   이 함수는 방어적으로 한 번 더 걸러내는 2차 방어선).
+ * - enabled=false 인 커스텀 tool 은 배열에서 제외.
+ */
+export type BuildRuntimeToolListFn = (
+  customTools: readonly (ToolJsonSchemaBase & { name: string; enabled: boolean })[],
+) => RuntimeToolSchema[];

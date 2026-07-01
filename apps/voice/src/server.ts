@@ -9,6 +9,7 @@ import { InMemoryClawOpsAdapter } from "./adapters/clawops-mock.js";
 import { MockVoiceAgent } from "./adapters/voice-agent-mock.js";
 import { InMemoryToolClient } from "./ports/tool-client-mock.js";
 import { InMemoryCallRepository } from "./ports/call-repository-mock.js";
+import { InMemoryTenantResolver } from "./ports/tenant-resolver-mock.js";
 import { SessionHandler } from "./session/session-handler.js";
 import { createVoiceApp } from "./webhook/voice-router.js";
 import { kbAnswerScenario } from "./session/simulate.js";
@@ -26,9 +27,17 @@ export function buildVoiceServer(mode: VoiceAgentMode = "realtime") {
     }),
   });
   const repo = new InMemoryCallRepository();
-  const handler = new SessionHandler({ clawops, voiceAgent, toolClient, repo });
+  // 실 조회는 통합 단계에서 GET /tenants/resolve HTTP 어댑터로 교체(Worker C 구현).
+  const tenantResolver = new InMemoryTenantResolver();
+  const handler = new SessionHandler({
+    clawops,
+    voiceAgent,
+    toolClient,
+    repo,
+    tenantResolver,
+  });
   const app = createVoiceApp({ handler });
-  return { app, handler, clawops, toolClient, repo };
+  return { app, handler, clawops, toolClient, repo, tenantResolver };
 }
 
 // 수동 로컬 실행(VOICE_LISTEN=1)에서만 포트 바인딩.

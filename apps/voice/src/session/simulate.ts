@@ -6,6 +6,7 @@
 import type {
   ClawOpsEvent,
   ClawOpsCallId,
+  ResolvedTenantAgentContext,
   ToolName,
   ToolParams,
   ToolResult,
@@ -14,6 +15,10 @@ import { InMemoryClawOpsAdapter } from "../adapters/clawops-mock.js";
 import { MockVoiceAgent, type MockScenario } from "../adapters/voice-agent-mock.js";
 import { InMemoryToolClient, type ToolHandlers } from "../ports/tool-client-mock.js";
 import { InMemoryCallRepository } from "../ports/call-repository-mock.js";
+import {
+  BOBI_PHONE_NUMBER,
+  InMemoryTenantResolver,
+} from "../ports/tenant-resolver-mock.js";
 import { SessionHandler } from "./session-handler.js";
 import type { VoiceAgentMode } from "@colli/contracts";
 
@@ -26,6 +31,12 @@ export interface SimulationOptions {
   toolHandlers: ToolHandlers;
   /** recording.completed 에 실려오는 전사(옵션) */
   transcriptText?: string;
+  /**
+   * 등록된 테넌트 목록(기본: BoBi 070 번호 1건). 신규 가상 테넌트로 시뮬레이션할
+   * 때는 여기에 ResolvedTenantAgentContext 를 추가로 넘긴다(`to` 옵션과 phoneNumber
+   * 를 일치시켜야 조회된다).
+   */
+  tenants?: ReadonlyArray<ResolvedTenantAgentContext>;
 }
 
 export interface SimulationResult {
@@ -34,6 +45,8 @@ export interface SimulationResult {
   repo: InMemoryCallRepository;
   handler: SessionHandler;
   callId: ClawOpsCallId;
+  tenantResolver: InMemoryTenantResolver;
+  voiceAgent: MockVoiceAgent;
 }
 
 /** call.initiated → ringing → answered → ended → recording.completed 시퀀스 */
@@ -98,21 +111,32 @@ export function buildInboundEventSequence(opts: {
   ];
 }
 
-/** 전체 managed inbound 통화를 시뮬레이션하고 목 상태를 돌려준다 */
+/**
+ * 전체 managed inbound 통화를 시뮬레이션하고 목 상태를 돌려준다.
+ * `to` 미지정 시 BoBi(테넌트 #1) 070 번호(BOBI_PHONE_NUMBER)로 걸려온 것으로
+ * 취급한다 — 기존 v1 시나리오/테스트가 무수정으로 BoBi 배선을 재현하기 위함.
+ */
 export async function simulateInboundCall(
   opts: SimulationOptions,
 ): Promise<SimulationResult> {
   const callId = (opts.callId ?? "clawops_call_demo_1") as ClawOpsCallId;
   const from = opts.from ?? "+821012345678";
-  const to = opts.to ?? "+827012340000";
+  const to = opts.to ?? BOBI_PHONE_NUMBER;
   const mode: VoiceAgentMode = opts.mode ?? "realtime";
 
   const clawops = new InMemoryClawOpsAdapter();
   const voiceAgent = new MockVoiceAgent(mode, opts.scenario);
   const toolClient = new InMemoryToolClient(opts.toolHandlers);
   const repo = new InMemoryCallRepository();
+  const tenantResolver = new InMemoryTenantResolver(opts.tenants);
 
-  const handler = new SessionHandler({ clawops, voiceAgent, toolClient, repo });
+  const handler = new SessionHandler({
+    clawops,
+    voiceAgent,
+    toolClient,
+    repo,
+    tenantResolver,
+  });
 
   const events = buildInboundEventSequence({
     callId,
@@ -126,7 +150,7 @@ export async function simulateInboundCall(
     await handler.handleEvent(ev);
   }
 
-  return { clawops, toolClient, repo, handler, callId };
+  return { clawops, toolClient, repo, handler, callId, tenantResolver, voiceAgent };
 }
 
 // ── 재사용 가능한 기본 시나리오들 ───────────────────────────────

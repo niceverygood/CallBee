@@ -6,6 +6,12 @@ export * from "./domain.js";
 export * from "./tools.js";
 export * from "./kakao.js";
 export * from "./webhooks.js";
+export * from "./tenant.js";
 
-/** 계약 버전 — breaking change 시 증가(Orchestrator 승인 후 전파) */
-export const CONTRACTS_VERSION = "0.1.0" as const;
+/**
+ * 계약 버전 — breaking change 시 증가(Orchestrator 승인 후 전파).
+ * 0.2.0: 멀티테넌트 확장(tenant.ts 신규, SYSTEM_TOOL_NAMES/BOBI_DEFAULT_INTENTS
+ * 별칭 추가). 기존 0.1.0 export 는 전부 유지되는 non-breaking 추가라
+ * minor 만 올린다.
+ */
+export const CONTRACTS_VERSION = "0.2.0" as const;

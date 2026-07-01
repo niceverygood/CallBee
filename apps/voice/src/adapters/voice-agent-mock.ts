@@ -95,6 +95,8 @@ class MockVoiceAgentSession implements VoiceAgentSession {
 export class MockVoiceAgent implements VoiceAgent {
   readonly mode: VoiceAgentMode;
   private readonly scenario: MockScenario;
+  /** 세션 핸들러가 실제로 바인딩한 최근 config(테스트 검증용 — 테넌트별 프롬프트/tool 확인) */
+  lastSessionConfig: VoiceAgentSessionConfig | null = null;
 
   constructor(mode: VoiceAgentMode, scenario: MockScenario) {
     this.mode = mode;
@@ -102,6 +104,7 @@ export class MockVoiceAgent implements VoiceAgent {
   }
 
   createSession(config: VoiceAgentSessionConfig): VoiceAgentSession {
+    this.lastSessionConfig = config;
     // config.mode 를 존중하되, 어댑터 자체 mode 와 일치해야 함.
     return new MockVoiceAgentSession(config.mode, this.scenario);
   }

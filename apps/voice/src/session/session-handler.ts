@@ -18,30 +18,38 @@ import type {
   CallSessionId,
   CallOutcome,
   SubscriberId,
+  TenantId,
   ToolName,
   ToolParams,
   ToolResult,
   EscalationTarget,
+  RuntimeToolSchema,
 } from "@colli/contracts";
-import { TOOL_SCHEMA_LIST } from "@colli/contracts";
 import type { ClawOpsAdapter } from "../adapters/clawops-adapter.js";
 import type {
   VoiceAgent,
   VoiceAgentSession,
 } from "../adapters/voice-agent.js";
-import { PLACEHOLDER_SYSTEM_PROMPT } from "../adapters/voice-agent.js";
 import type { ToolClient } from "../ports/tool-client.js";
 import type { CallRepository } from "../ports/call-repository.js";
+import type { TenantResolverPort } from "../ports/tenant-resolver.js";
+import { buildTenantSystemPromptForSession } from "./tenant-prompt.js";
 
 // ── 고지 멘트(GUARDRAIL #3). 실제 문구는 Worker F/B 소유, 여기선 기본값. ──
 export const AI_DISCLOSURE_TEXT =
   "안녕하세요. BoBi 고객센터 AI 상담원입니다. 상담 품질 향상을 위해 통화 내용이 녹음됩니다.";
+
+/** 미등록 070 번호로 걸려온 통화에 재생할 안내 후 종료 멘트 */
+export const UNKNOWN_TENANT_TEXT =
+  "죄송합니다. 현재 이 번호로 연결된 서비스를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.";
 
 export interface SessionHandlerDeps {
   clawops: ClawOpsAdapter;
   voiceAgent: VoiceAgent;
   toolClient: ToolClient;
   repo: CallRepository;
+  /** event.to(070 번호) → 테넌트 에이전트 컨텍스트 조회(GET /tenants/resolve, Worker C 구현) */
+  tenantResolver: TenantResolverPort;
 }
 
 /** 진행 중 통화의 인메모리 상태 */
@@ -50,6 +58,14 @@ interface LiveCall {
   sessionId: CallSessionId;
   agentSession: VoiceAgentSession;
   outcome: CallOutcome | null;
+  /** 세션에 바인딩된 테넌트 식별자(tool 위임 시 X-Colli-Tenant-Id 컨텍스트로 전달) */
+  tenantId: TenantId | null;
+}
+
+/** 미등록 070 번호(테넌트 없음) — 응대만 하고 안내 후 즉시 종료하는 표식 */
+interface UnknownTenantCall {
+  clawopsCallId: ClawOpsCallId;
+  unknownTenant: true;
 }
 
 /** tool 결과 → 통화 결과(CallOutcome) 매핑 */
@@ -87,6 +103,10 @@ function transferTargetForTool(
 export class SessionHandler {
   private readonly deps: SessionHandlerDeps;
   private readonly live = new Map<ClawOpsCallId, LiveCall>();
+  private readonly unknownTenantCalls = new Map<
+    ClawOpsCallId,
+    UnknownTenantCall
+  >();
 
   constructor(deps: SessionHandlerDeps) {
     this.deps = deps;
@@ -108,7 +128,7 @@ export class SessionHandler {
     }
   }
 
-  // ── 수신: 세션 생성 + 응답 ──────────────────────────────────────
+  // ── 수신: 070 → 테넌트 조회 → 세션 생성 + 응답 ──────────────────
   private async onInitiated(
     event: Extract<ClawOpsEvent, { type: "call.initiated" }>,
   ): Promise<void> {
@@ -120,9 +140,35 @@ export class SessionHandler {
       startedAt: event.timestamp,
     });
 
+    const tenantCtx = await this.deps.tenantResolver.resolve(event.to);
+
+    if (!tenantCtx) {
+      // 미등록 070 번호 — 안전 폴백: 응답은 하되 에이전트 세션은 만들지 않고
+      // onAnswered 에서 안내 후 즉시 hang_up 한다(무한 대기/크래시 없음).
+      this.unknownTenantCalls.set(event.callId, {
+        clawopsCallId: event.callId,
+        unknownTenant: true,
+      });
+      await this.deps.repo.updateCallSession(session.id, {
+        outcome: "other",
+        failureReason: `unknown_tenant: no tenant registered for ${event.to}`,
+      });
+      await this.deps.clawops.answer(event.callId);
+      return;
+    }
+
+    const systemPrompt = buildTenantSystemPromptForSession({
+      agentConfig: tenantCtx.agentConfig,
+      intents: tenantCtx.intents,
+    });
+    // ResolvedTenantAgentContext.toolSchemas 는 kind:"system"|"custom" 병합 배열로
+    // 계약에 고정되어 있다(판별 유니온이 아닌 넓은 shape) — 세션 바인딩 시점에는
+    // 판별이 필요 없으므로 RuntimeToolSchema[] 로 그대로 캐스팅해 전달한다.
+    const toolSchemas = tenantCtx.toolSchemas as RuntimeToolSchema[];
+
     const agentSession = this.deps.voiceAgent.createSession({
-      systemPrompt: PLACEHOLDER_SYSTEM_PROMPT,
-      tools: TOOL_SCHEMA_LIST,
+      systemPrompt,
+      tools: toolSchemas,
       mode: this.deps.voiceAgent.mode,
     });
 
@@ -131,6 +177,7 @@ export class SessionHandler {
       sessionId: session.id,
       agentSession,
       outcome: null,
+      tenantId: tenantCtx.tenant.tenantId,
     });
 
     await this.deps.clawops.answer(event.callId);
@@ -140,6 +187,14 @@ export class SessionHandler {
   private async onAnswered(
     event: Extract<ClawOpsEvent, { type: "call.answered" }>,
   ): Promise<void> {
+    // 미등록 070 번호 — 안내 후 즉시 hang_up(무한 대기/크래시 없는 안전 폴백).
+    if (this.unknownTenantCalls.has(event.callId)) {
+      await this.deps.clawops.playPrompt(event.callId, UNKNOWN_TENANT_TEXT);
+      await this.deps.clawops.hangUp(event.callId);
+      this.unknownTenantCalls.delete(event.callId);
+      return;
+    }
+
     const call = this.live.get(event.callId);
     if (!call) return;
 
@@ -228,7 +283,9 @@ export class SessionHandler {
   ): Promise<void> {
     const startedAt = Date.now();
     this.lastToolCall.set(call.clawopsCallId, { tool, params });
-    const res = await this.deps.toolClient.invoke(tool, params);
+    const res = await this.deps.toolClient.invoke(tool, params, {
+      tenantId: call.tenantId ?? undefined,
+    });
     const latencyMs = Date.now() - startedAt;
 
     await this.deps.repo.recordToolInvocation({
@@ -292,6 +349,7 @@ export class SessionHandler {
   private async onEnded(
     event: Extract<ClawOpsEvent, { type: "call.ended" }>,
   ): Promise<void> {
+    this.unknownTenantCalls.delete(event.callId);
     const call = this.live.get(event.callId);
     if (!call) return;
     await this.deps.repo.updateCallSession(call.sessionId, {

@@ -6,6 +6,10 @@ import { InMemoryClawOpsAdapter } from "../adapters/clawops-mock.js";
 import { MockVoiceAgent } from "../adapters/voice-agent-mock.js";
 import { InMemoryToolClient } from "../ports/tool-client-mock.js";
 import { InMemoryCallRepository } from "../ports/call-repository-mock.js";
+import {
+  BOBI_PHONE_NUMBER,
+  InMemoryTenantResolver,
+} from "../ports/tenant-resolver-mock.js";
 import { kbAnswerScenario, buildInboundEventSequence } from "../session/simulate.js";
 
 describe("parseClawOpsEvent", () => {
@@ -50,7 +54,14 @@ describe("/voice 라우트 (express app, 포트 바인딩 없이 핸들러 직�
       get_kb_answer: () => ({ answer: "ok", sourceId: null, confidence: 0.9 }),
     });
     const repo = new InMemoryCallRepository();
-    const handler = new SessionHandler({ clawops, voiceAgent, toolClient, repo });
+    const tenantResolver = new InMemoryTenantResolver();
+    const handler = new SessionHandler({
+      clawops,
+      voiceAgent,
+      toolClient,
+      repo,
+      tenantResolver,
+    });
     const app = createVoiceApp({ handler });
     return { app, handler, repo, clawops };
   }
@@ -60,7 +71,7 @@ describe("/voice 라우트 (express app, 포트 바인딩 없이 핸들러 직�
     const events = buildInboundEventSequence({
       callId: "c_route_1" as ClawOpsCallId,
       from: "+821011112222",
-      to: "+827012340000",
+      to: BOBI_PHONE_NUMBER,
       recordingUrl: "https://rec.example/c_route_1.wav",
     });
 

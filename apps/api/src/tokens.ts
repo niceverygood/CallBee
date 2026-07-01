@@ -9,3 +9,10 @@ export const KNOWLEDGE_REPO = Symbol("KnowledgeRepository");
 export const CALLBACK_REPO = Symbol("CallbackRepository");
 export const SESSION_STORE = Symbol("SessionStore");
 export const TRACE_PORT = Symbol("TracePort");
+
+// ── v2(멀티테넌트) 신규 포트 토큰 ────────────────────────────────
+export const TENANT_REPO = Symbol("TenantRepository");
+export const TENANT_AGENT_CONFIG_REPO = Symbol("TenantAgentConfigRepository");
+export const TENANT_INTENT_REPO = Symbol("TenantIntentRepository");
+export const CUSTOM_TOOL_REPO = Symbol("CustomToolRepository");
+export const WEBHOOK_TOOL_INVOKER = Symbol("WebhookToolInvoker");

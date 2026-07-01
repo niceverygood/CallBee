@@ -13,16 +13,19 @@
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
+    "seed:bobi-tenant": "tsx prisma/seed-bobi-tenant.ts",
     "studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "test": "echo \"(db) no runtime tests\" && exit 0"
   },
   "dependencies": {
+    "@colli/dialogue": "workspace:*",
     "@prisma/client": "^5.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }

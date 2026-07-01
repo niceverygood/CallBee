@@ -8,12 +8,14 @@ import type {
   ToolParams,
   ToolResult,
   ToolInvocationResult,
+  TenantId,
 } from "@colli/contracts";
-import type { ToolClient } from "./tool-client.js";
+import type { ToolClient, ToolInvokeContext } from "./tool-client.js";
 
 export interface ToolInvocationLog {
   tool: ToolName;
   params: ToolParams<ToolName>;
+  tenantId?: TenantId;
 }
 
 /** tool 별 결과를 만드는 핸들러(부분 등록 가능) */
@@ -34,8 +36,9 @@ export class InMemoryToolClient implements ToolClient {
   async invoke<T extends ToolName>(
     tool: T,
     params: ToolParams<T>,
+    ctx?: ToolInvokeContext,
   ): Promise<ToolInvocationResult<T>> {
-    this.invocations.push({ tool, params });
+    this.invocations.push({ tool, params, tenantId: ctx?.tenantId });
     const handler = this.handlers[tool] as
       | ((p: ToolParams<T>) => ToolResult<T> | Promise<ToolResult<T>>)
       | undefined;

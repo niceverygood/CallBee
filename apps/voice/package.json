@@ -15,6 +15,7 @@
   "dependencies": {
     "@colli/contracts": "workspace:*",
     "@colli/db": "workspace:*",
+    "@colli/dialogue": "workspace:*",
     "express": "^4.21.1",
     "ws": "^8.18.0"
   },

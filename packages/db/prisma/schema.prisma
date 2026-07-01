@@ -1,6 +1,23 @@
-// Colli-BoBi 신규 테이블. 구독자/구독(Subscriber/Subscription)은
-// BoBi 기존 시스템 소유 → 여기 모델 없음. Worker C 의 read 어댑터로만 접근.
-// enum 값은 @colli/contracts 의 도메인 상수와 1:1 정렬한다.
+// Colli-BoBi → Colli 플랫폼 (멀티테넌트) Prisma 스키마.
+// v1(BoBi 전용)에서 v2(멀티테넌트 셀프서비스 AI 상담원 플랫폼)로 확장.
+//
+// 설계 원칙(자세한 배경은 /docs/tenant-platform-architecture.md 참조):
+// 1. Tenant 를 최상위 루트로 두고, 기존 7개 도메인 테이블(CallSession/Ticket/
+//    KnowledgeItem/Notification/ConsentRecord/CallbackRequest/ToolInvocation)에
+//    전부 tenantId 를 추가한다(격리 강제).
+// 2. "테넌트 자유 정의" 축(의도 카테고리, tool)은 고정 Prisma enum 을 버리고
+//    문자열 + 카탈로그 테이블(TenantIntent/TenantTool)로 표현한다.
+//    → Intent enum 은 삭제하지 않고 유지하되(하위호환, seed/문서 참조용),
+//      CallSession.intent / Ticket.category / KnowledgeItem.category 는
+//      String 컬럼(테넌트 의도 key 참조)으로 바뀐다.
+// 3. "플랫폼 불변" 축(티켓 상태기계, 콜백 큐, 감정 태깅, 통화 결과, 알림 상태)은
+//    업종 불문 시스템 동작이므로 기존 Prisma enum 을 그대로 유지한다.
+// 4. GUARDRAIL #1(결제정보 음성수집 금지)/#2(상태변경은 tool 경유)/#3(고지·동의)은
+//    테이블이 아니라 코드(packages/dialogue 의 system-prompt 빌더)에 하드코드되어
+//    테넌트가 끌 수 없다 — 스키마에는 이를 우회할 수 있는 컬럼을 두지 않는다.
+// 5. BoBi 자신은 "테넌트 #1"의 시드 데이터가 된다(seed 스크립트는 이번 단계 범위 밖,
+//    docs 에 값만 명시). 이 마이그레이션은 아직 라이브 DB 에 적용하지 않는다
+//    (prisma validate 로 문법/관계 정합성만 검증).
 
 generator client {
   provider = "prisma-client-js"
@@ -11,7 +28,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ── enums (contracts 와 정렬) ───────────────────────────────────
+// ── enums (플랫폼 불변 — 업종 불문 시스템 상태기계, 변경 없음) ──────
+// 주의: Intent enum 은 v1 하위호환/seed 참조용으로 유지하지만,
+// CallSession.intent / Ticket.category / KnowledgeItem.category 컬럼은
+// 더 이상 이 enum 을 타입으로 쓰지 않는다(String 으로 일반화, 아래 참조).
+// 신규 코드는 TenantIntent.key(문자열)를 참조해야 한다.
 enum Intent {
   usage
   billing
@@ -84,17 +105,164 @@ enum NotificationStatus {
   failed
 }
 
+// ── 테넌트(입주 업체) ────────────────────────────────────────────
+// 테넌트 #1 = BoBi 자신. 신규 가입 업체(식당/병원 등)는 각자 자기 070 번호로
+// 새 Tenant 행을 갖는다. slug/phoneNumber 로 라우팅한다.
+enum TenantStatus {
+  onboarding // 가입은 했으나 070/설정 세팅 중, 아직 실통화 미수신
+  active // 정상 운영
+  suspended // 결제/정책 위반 등으로 일시 정지(수신 거부)
+}
+
+enum TenantPlan {
+  trial
+  starter
+  pro
+  enterprise
+}
+
+model Tenant {
+  id          String       @id @default(cuid())
+  /// URL/로그/시드 참조용 slug. 예: "bobi", "green-clinic"
+  slug        String       @unique
+  /// 업체 표시명. 예: "BoBi", "그린내과의원"
+  name        String
+  /// 업종 라벨(자유 텍스트, 온보딩 시 참고용 — 강제 카탈로그 아님). 예: "보험설계사 SaaS", "식당", "병원"
+  industryLabel String?
+  /// 테넌트가 소유한 070 번호(E.164). ClawOps 인바운드 라우팅 키.
+  phoneNumber String       @unique
+  status      TenantStatus @default(onboarding)
+  plan        TenantPlan   @default(trial)
+  /// 대시보드 로그인 소유자 이메일(간단 식별, 별도 Auth 테이블은 v1 범위 밖)
+  ownerEmail  String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  agentConfig      TenantAgentConfig?
+  intents          TenantIntent[]
+  tools            TenantTool[]
+  knowledgeItems   KnowledgeItem[]
+  callSessions     CallSession[]
+  tickets          Ticket[]
+  notifications    Notification[]
+  consentRecords   ConsentRecord[]
+  callbackRequests CallbackRequest[]
+  toolInvocations  ToolInvocation[]
+
+  @@index([status])
+}
+
+// ── 테넌트별 에이전트 설정 (system prompt/인사말 합성 재료) ────────
+// 설계 결정: "통짜 문자열 저장" 대신 "구조화 필드 + 코드 합성"을 채택한다.
+//   이유: buildSystemPrompt() 의 섹션 조립 구조(역할→톤→인사→고지→본인확인→
+//   의도카탈로그→tool규칙→절대금지(불변)→업종특화금지→감정→마무리)를 그대로
+//   재사용해야 GUARDRAIL #1/#3 하드코드 섹션이 "옵션으로 우회 불가능"이 구조적으로
+//   보장된다. 통짜 프롬프트 치환을 허용하면 이 불변 섹션도 테넌트가 지워버릴 수
+//   있는 문자열 치환이 되어버려 안전장치가 무너진다. 따라서 자유 서술이 필요한
+//   지점(역할 설명, 톤, 업종 제약)만 구조화 필드로 열어주고, 나머지 골격은
+//   코드가 소유한다.
+model TenantAgentConfig {
+  id       String @id @default(cuid())
+  tenantId String @unique
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// buildSystemPrompt() 의 serviceName 대응(안내 문구에 노출되는 서비스명)
+  serviceName String
+  /// buildSystemPrompt() 의 agentName 대응(AI 상담원 이름, 예: "보비")
+  agentName   String
+  /// 첫 인사 문구. null 이면 기본 템플릿("안녕하세요, {serviceName} 고객센터의 AI 상담원 {agentName}입니다.")으로 합성
+  greetingText String?
+  /// "# 역할" 섹션에 자유 서술로 덧붙이는 업종/서비스 설명(예: "우리는 식당이고 예약과 메뉴 문의를 받습니다")
+  personaInstructions String?
+  /// "# 대화 톤과 방식" 섹션에 추가로 append 할 톤 지침 목록(플랫폼 기본 톤 규칙은 유지, 이건 추가분만)
+  toneExtra String[] @default([])
+  /// 업종 특화 금지사항(예: ["의료 조언 금지"], ["보험상품 권유·판단·진단성 발언 금지"]).
+  /// "# 절대 금지 — 업종 특화" 섹션으로 렌더링됨. 플랫폼 불변 가드(결제정보/고지동의)와는
+  /// 별개이며 이 필드는 테넌트가 자유 편집 가능 — 코드의 불변 섹션을 대체하지 않는다.
+  domainConstraints String[] @default([])
+  /// 의도 파악 N회 실패 시 폴백 tool 이름(기본: request_callback). SYSTEM_TOOL_NAMES 또는 TenantTool.name 참조.
+  intentUnresolvedFallbackTool String @default("request_callback")
+  /// 의도 파악 최대 재시도 횟수(무한루프 방지, GUARDRAIL 취지 계승)
+  maxIntentAttempts Int @default(2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── 테넌트별 의도 카탈로그(자유 정의) ───────────────────────────
+// BoBi(테넌트 #1)는 기존 INTENTS 7종(usage/billing/tech_error/upgrade/churn/
+// new_signup/other)을 이 테이블에 7행으로 시딩한다(docs 참조). 신규 테넌트는
+// 완전히 자유로운 key/label/keywords 를 정의한다.
+model TenantIntent {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// 테넌트 스코프 내 유일한 slug. 예: "usage", "table_reservation". CallSession.intent/Ticket.category/KnowledgeItem.category 가 참조.
+  key      String
+  /// 사람이 읽는 라벨. 예: "사용법", "예약 확인"
+  label    String
+  /// classifyIntent 규칙기반 폴백용 키워드
+  keywords String[] @default([])
+  /// 이 의도를 처리할 때 호출할 tool 이름(SYSTEM_TOOL_NAMES 중 하나 또는 TenantTool.name). null 이면 get_kb_answer 폴백 등 기본 라우팅.
+  routingToolName String?
+  /// 표시 순서(대시보드/프롬프트 카탈로그 렌더 순서)
+  sortOrder Int     @default(0)
+  enabled   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+// ── 테넌트별 커스텀 tool (webhook 기반) ─────────────────────────
+// LLM function-calling 의 커스텀 function 1개 = 이 테이블의 1행.
+// 실행 메커니즘: apps/api 가 이 행을 로드해 webhookUrl 로 POST 프록시한다
+// (임의 코드 실행 없음 — 자세한 시퀀스는 /docs/tenant-platform-architecture.md 참조).
+model TenantTool {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// LLM function name. 테넌트 스코프 내 유일. SYSTEM_TOOL_NAMES(플랫폼 고정 tool)와 이름이 겹치면 안 됨(검증은 apps/api 책임).
+  name        String
+  /// LLM 에 노출되는 description(언제 이 tool 을 호출할지 판단 근거)
+  description String
+  /// OpenAI function-calling parameters 형식 JSON Schema. {type:"object", properties:{...}, required:[...], additionalProperties:false}
+  paramsSchema Json
+  /// 테넌트가 등록한 webhook 엔드포인트(https 강제는 애플리케이션 레벨 검증)
+  webhookUrl    String
+  /// HMAC-SHA256 서명용 시크릿 — 평문 저장 금지, services/compliance 의 암호화 유틸로 암호화한 값만 저장(운영 시)
+  webhookSecret String?
+  /// 응답 대기 타임아웃(ms). 통화 중 침묵 시간 제한 — 기본 8초, 상한은 애플리케이션 레벨에서 강제
+  timeoutMs Int     @default(8000)
+  enabled   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
 // ── 통화 세션 ───────────────────────────────────────────────────
 model CallSession {
   id            String        @id @default(cuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // ClawOps 콜 식별자(외부)
   clawopsCallId String        @unique
   direction     CallDirection @default(inbound)
   fromNumber    String // 발신번호(E.164)
   toNumber      String // 수신 070 번호
-  // 본인확인된 구독자(외부 id, 미확인이면 null)
+  // 본인확인된 구독자/고객(외부 id, 미확인이면 null). BoBi 는 SubscriberProfile.subscriberId,
+  // 타 테넌트는 자기 CRM 조회 tool 이 반환하는 임의 식별자.
   subscriberId  String?
-  intent        Intent?
+  /// 테넌트 의도 key(TenantIntent.key 참조, FK 강제는 안 함 — 조회 성능/유연성 트레이드오프).
+  /// v1(BoBi)에서는 usage/billing/tech_error/upgrade/churn/new_signup/other 문자열 값이 그대로 들어간다.
+  intent        String?
   emotion       Emotion?
   outcome       CallOutcome?
   summary       String?
@@ -116,6 +284,7 @@ model CallSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([tenantId])
   @@index([subscriberId])
   @@index([intent])
   @@index([startedAt])
@@ -139,10 +308,13 @@ model Transcript {
 // ── 티켓 ────────────────────────────────────────────────────────
 model Ticket {
   id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   callSessionId String?
   callSession   CallSession?   @relation(fields: [callSessionId], references: [id], onDelete: SetNull)
-  subscriberId  String // 외부 구독자 id
-  category      Intent
+  subscriberId  String // 외부 구독자/고객 id
+  /// 테넌트 의도 key(TenantIntent.key 참조). v1(BoBi)에서는 Intent enum 7종 값이 그대로 문자열로 들어간다.
+  category      String
   summary       String
   severity      TicketSeverity @default(medium)
   status        TicketStatus   @default(open)
@@ -155,6 +327,7 @@ model Ticket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([tenantId])
   @@index([subscriberId])
   @@index([status])
   @@index([category])
@@ -162,27 +335,33 @@ model Ticket {
 
 // ── 지식베이스 ──────────────────────────────────────────────────
 model KnowledgeItem {
-  id        String   @id @default(cuid())
-  category  Intent
-  question  String
-  answer    String
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// 테넌트 의도 key(TenantIntent.key 참조). v1(BoBi)에서는 Intent enum 7종 값이 그대로 문자열로 들어간다.
+  category String
+  question String
+  answer   String
   // 키워드/태그(간단 매칭). 임베딩은 별도 컬럼/스토어로 확장 가능.
-  keywords  String[] @default([])
-  enabled   Boolean  @default(true)
+  keywords String[] @default([])
+  enabled  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([category])
+  @@index([tenantId])
+  @@index([tenantId, category])
 }
 
-// ── 알림(카카오 알림톡) ─────────────────────────────────────────
+// ── 알림(카카오 알림톡 등) ──────────────────────────────────────
 model Notification {
   id            String             @id @default(cuid())
+  tenantId      String
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   callSessionId String?
   callSession   CallSession?       @relation(fields: [callSessionId], references: [id], onDelete: SetNull)
   ticketId      String?
   ticket        Ticket?            @relation(fields: [ticketId], references: [id], onDelete: SetNull)
-  templateKey   String // KakaoTemplateKey
+  templateKey   String // KakaoTemplateKey (v1). 향후 채널/템플릿 확장 시에도 문자열 유지.
   toNumber      String
   vars          Json
   status        NotificationStatus @default(queued)
@@ -193,13 +372,16 @@ model Notification {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
+  @@index([tenantId])
   @@index([status])
   @@index([templateKey])
 }
 
-// ── 동의 기록(고지·녹음 동의, GUARDRAIL #3) ─────────────────────
+// ── 동의 기록(고지·녹음 동의, GUARDRAIL #3 — 플랫폼 전체 강제) ──
 model ConsentRecord {
   id            String      @id @default(cuid())
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   callSessionId String
   callSession   CallSession @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
   // 고지 유형: ai_disclosure(AI응대) / recording(녹음)
@@ -209,12 +391,15 @@ model ConsentRecord {
   disclosureText String?
   createdAt     DateTime    @default(now())
 
+  @@index([tenantId])
   @@index([callSessionId])
 }
 
 // ── 콜백 요청 큐 ────────────────────────────────────────────────
 model CallbackRequest {
   id            String          @id @default(cuid())
+  tenantId      String
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   callSessionId String?
   callSession   CallSession?    @relation(fields: [callSessionId], references: [id], onDelete: SetNull)
   subscriberId  String?
@@ -227,15 +412,20 @@ model CallbackRequest {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  @@index([tenantId])
   @@index([status])
   @@index([urgency])
 }
 
-// ── tool 호출 trace(관측성 GUARDRAIL #7) ────────────────────────
+// ── tool 호출 trace(관측성 GUARDRAIL #7 — 플랫폼 전체 강제) ────
 model ToolInvocation {
   id            String      @id @default(cuid())
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   callSessionId String
   callSession   CallSession @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  /// 시스템 tool 이름(SYSTEM_TOOL_NAMES) 또는 테넌트 커스텀 tool 이름(TenantTool.name).
+  /// 커스텀 tool 은 "custom:{toolName}" 프리픽스로 네임스페이싱해 시스템 tool 과 구분(apps/api 컨벤션).
   toolName      String
   // 마스킹된 파라미터/결과 요약만 저장
   paramsSummary Json?
@@ -244,6 +434,7 @@ model ToolInvocation {
   latencyMs     Int?
   createdAt     DateTime    @default(now())
 
+  @@index([tenantId])
   @@index([callSessionId])
   @@index([toolName])
 }

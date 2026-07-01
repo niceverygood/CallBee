@@ -78,6 +78,24 @@ describe("ToolsService — 계약 시그니처대로 동작", () => {
     expect(stored?.summary).toBe("로그인 오류");
   });
 
+  it("create_ticket: 세션이 미확인 상태면 not_verified 로 차단(GUARDRAIL #4)", async () => {
+    const sub = makeSubscriber();
+    const h = makeHarness({ subscribers: [sub] });
+    // 본인확인 없이 세션에 다른 상태만 존재 → 게이트가 막아야 함
+    await h.sessions.set(CTX.callSessionId, { verified: false });
+    await expect(
+      h.service.create_ticket(
+        {
+          subscriberId: sub.subscriberId,
+          category: "tech_error",
+          summary: "x",
+          severity: "low",
+        },
+        CTX,
+      ),
+    ).rejects.toMatchObject({ code: "not_verified" });
+  });
+
   it("route_to_sales: churn → warm_transfer, 그 외 → callback_queued(+콜백 적재)", async () => {
     const sub = makeSubscriber();
     const h = makeHarness({ subscribers: [sub] });

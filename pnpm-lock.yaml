@@ -122,6 +122,61 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)
 
+  apps/console:
+    dependencies:
+      '@colli/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@tanstack/react-query':
+        specifier: ^5.62.0
+        version: 5.101.2(react@18.3.1)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      react-router-dom:
+        specifier: ^6.28.0
+        version: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+    devDependencies:
+      '@testing-library/jest-dom':
+        specifier: ^6.6.3
+        version: 6.9.1
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.7(@types/react@18.3.31)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.4
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.0))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.5.2(postcss@8.5.16)
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
+      postcss:
+        specifier: ^8.4.49
+        version: 8.5.16
+      tailwindcss:
+        specifier: ^3.4.15
+        version: 3.4.19(tsx@4.22.4)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.11
+        version: 5.4.21(@types/node@22.20.0)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)
+
   apps/voice:
     dependencies:
       '@colli/contracts':
@@ -130,6 +185,9 @@ importers:
       '@colli/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@colli/dialogue':
+        specifier: workspace:*
+        version: link:../../packages/dialogue
       express:
         specifier: ^4.21.1
         version: 4.22.2
@@ -164,6 +222,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@colli/dialogue':
+        specifier: workspace:*
+        version: link:../dialogue
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
@@ -174,6 +235,9 @@ importers:
       prisma:
         specifier: ^5.22.0
         version: 5.22.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

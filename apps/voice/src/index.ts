@@ -15,7 +15,10 @@ export * from "./ports/tool-client.js";
 export * from "./ports/tool-client-mock.js";
 export * from "./ports/call-repository.js";
 export * from "./ports/call-repository-mock.js";
+export * from "./ports/tenant-resolver.js";
+export * from "./ports/tenant-resolver-mock.js";
 
-// 세션 핸들러 + 웹훅 라우트
+// 세션 핸들러 + 웹훅 라우트 + 프롬프트 조립
 export * from "./session/session-handler.js";
+export * from "./session/tenant-prompt.js";
 export * from "./webhook/voice-router.js";

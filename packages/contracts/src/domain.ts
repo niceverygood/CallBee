@@ -18,6 +18,11 @@ export type ConsentRecordId = Brand<string, "ConsentRecordId">;
 export type ClawOpsCallId = Brand<string, "ClawOpsCallId">;
 
 // ── 의도 분류 (7종, Worker B 라우팅 기준) ───────────────────────
+// v2(멀티테넌트)에서 이 7종은 "BoBi(테넌트 #1) 기본 의도 카탈로그"로
+// 재해석된다. 신규 테넌트는 자유 의도(TenantIntentKey, @colli/contracts/
+// tenant.ts)를 정의하므로 이 고정 유니온에 얽매이지 않는다.
+// `INTENTS`/`Intent` 는 하위호환을 위해 삭제하지 않고 그대로 유지한다
+// (packages/dialogue 의 48개 테스트가 이 이름으로 직접 import 한다).
 export const INTENTS = [
   "usage", // 사용법
   "billing", // 결제
@@ -28,6 +33,11 @@ export const INTENTS = [
   "other", // 기타
 ] as const;
 export type Intent = (typeof INTENTS)[number];
+
+/** `INTENTS` 의 하위호환 별칭 — "BoBi(테넌트 #1) 기본 의도 카탈로그"라는 의미를 명시. */
+export const BOBI_DEFAULT_INTENTS = INTENTS;
+/** `Intent` 의 하위호환 별칭. */
+export type BoBiDefaultIntent = Intent;
 
 /** 사람이 읽는 라벨(로그·대시보드용) */
 export const INTENT_LABELS: Record<Intent, string> = {
