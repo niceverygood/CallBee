@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { makeTenantHarness } from "./tenant-harness.js";
+import { makeTenantHarness, mockPlatformAdminReq } from "./tenant-harness.js";
 
 describe("TenantsController — 테넌트 CRUD", () => {
   it("POST /tenants → 생성 성공", async () => {
@@ -26,7 +26,7 @@ describe("TenantsController — 테넌트 CRUD", () => {
 
   it("GET /tenants/:id → 존재하지 않으면 tenant_not_found", async () => {
     const h = makeTenantHarness();
-    const res = await h.controller.getById("nope");
+    const res = await h.controller.getById(mockPlatformAdminReq(), "nope");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe("tenant_not_found");
   });
@@ -40,7 +40,7 @@ describe("TenantsController — 테넌트 CRUD", () => {
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
-    const updated = await h.controller.update(created.data.tenantId, {
+    const updated = await h.controller.update(mockPlatformAdminReq(), created.data.tenantId, {
       status: "active",
     });
     expect(updated.ok).toBe(true);
@@ -58,7 +58,7 @@ describe("TenantsController — agent-config", () => {
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const put = await h.controller.putAgentConfig(created.data.tenantId, {
+    const put = await h.controller.putAgentConfig(mockPlatformAdminReq(), created.data.tenantId, {
       serviceName: "BoBi",
       agentName: "보비",
       greetingText: null,
@@ -70,14 +70,14 @@ describe("TenantsController — agent-config", () => {
     });
     expect(put.ok).toBe(true);
 
-    const got = await h.controller.getAgentConfig(created.data.tenantId);
+    const got = await h.controller.getAgentConfig(mockPlatformAdminReq(), created.data.tenantId);
     expect(got.ok).toBe(true);
     if (got.ok) expect(got.data.agentName).toBe("보비");
   });
 
   it("설정 없는 테넌트 GET → agent_config_not_found", async () => {
     const h = makeTenantHarness();
-    const res = await h.controller.getAgentConfig("nope");
+    const res = await h.controller.getAgentConfig(mockPlatformAdminReq(), "nope");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe("agent_config_not_found");
   });
@@ -94,24 +94,24 @@ describe("TenantsController — intents CRUD", () => {
     if (!created.ok) throw new Error("setup failed");
     const tenantId = created.data.tenantId;
 
-    const createIntent = await h.controller.createIntent(tenantId, {
+    const createIntent = await h.controller.createIntent(mockPlatformAdminReq(), tenantId, {
       key: "usage",
       label: "사용법",
       routingToolName: "get_kb_answer",
     });
     expect(createIntent.ok).toBe(true);
 
-    const list = await h.controller.listIntents(tenantId);
+    const list = await h.controller.listIntents(mockPlatformAdminReq(), tenantId);
     expect(list.ok).toBe(true);
     if (list.ok) expect(list.data.length).toBe(1);
 
-    const updated = await h.controller.updateIntent(tenantId, "usage", {
+    const updated = await h.controller.updateIntent(mockPlatformAdminReq(), tenantId, "usage", {
       label: "사용 방법",
     });
     expect(updated.ok).toBe(true);
     if (updated.ok) expect(updated.data.label).toBe("사용 방법");
 
-    const del = await h.controller.deleteIntent(tenantId, "usage");
+    const del = await h.controller.deleteIntent(mockPlatformAdminReq(), tenantId, "usage");
     expect(del.ok).toBe(true);
     if (del.ok) expect(del.data.deleted).toBe(true);
   });
@@ -127,7 +127,7 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const res = await h.controller.createTool(created.data.tenantId, {
+    const res = await h.controller.createTool(mockPlatformAdminReq(), created.data.tenantId, {
       name: "check_reservation",
       description: "예약 가능 여부 확인",
       paramsSchema: {
@@ -151,7 +151,7 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const res = await h.controller.createTool(created.data.tenantId, {
+    const res = await h.controller.createTool(mockPlatformAdminReq(), created.data.tenantId, {
       name: "lookup_subscriber",
       description: "충돌",
       paramsSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -170,7 +170,7 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const res = await h.controller.createTool(created.data.tenantId, {
+    const res = await h.controller.createTool(mockPlatformAdminReq(), created.data.tenantId, {
       name: "check_reservation",
       description: "예약 확인",
       paramsSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -189,7 +189,7 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const res = await h.controller.createTool(created.data.tenantId, {
+    const res = await h.controller.createTool(mockPlatformAdminReq(), created.data.tenantId, {
       name: "check_reservation",
       description: "예약 확인",
       paramsSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -208,7 +208,7 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const res = await h.controller.createTool(created.data.tenantId, {
+    const res = await h.controller.createTool(mockPlatformAdminReq(), created.data.tenantId, {
       name: "check_reservation",
       description: "예약 확인",
       paramsSchema: { type: "object", properties: {}, additionalProperties: true },
@@ -228,7 +228,7 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     if (!created.ok) throw new Error("setup failed");
     const tenantId = created.data.tenantId;
 
-    const tool = await h.controller.createTool(tenantId, {
+    const tool = await h.controller.createTool(mockPlatformAdminReq(), tenantId, {
       name: "check_reservation",
       description: "예약 확인",
       paramsSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -236,17 +236,17 @@ describe("TenantsController — tools CRUD (SSRF 방지 검증)", () => {
     });
     if (!tool.ok) throw new Error("tool create failed");
 
-    const list = await h.controller.listTools(tenantId);
+    const list = await h.controller.listTools(mockPlatformAdminReq(), tenantId);
     expect(list.ok).toBe(true);
     if (list.ok) expect(list.data.length).toBe(1);
 
-    const updated = await h.controller.updateTool(tenantId, tool.data.toolId, {
+    const updated = await h.controller.updateTool(mockPlatformAdminReq(), tenantId, tool.data.toolId, {
       enabled: false,
     });
     expect(updated.ok).toBe(true);
     if (updated.ok) expect(updated.data.enabled).toBe(false);
 
-    const del = await h.controller.deleteTool(tenantId, tool.data.toolId);
+    const del = await h.controller.deleteTool(mockPlatformAdminReq(), tenantId, tool.data.toolId);
     expect(del.ok).toBe(true);
     if (del.ok) expect(del.data.deleted).toBe(true);
   });
@@ -262,7 +262,7 @@ describe("TenantsController — GET /tenants/resolve (070 라우팅)", () => {
       status: "active",
     });
     if (!created.ok) throw new Error("setup failed");
-    await h.controller.putAgentConfig(created.data.tenantId, {
+    await h.controller.putAgentConfig(mockPlatformAdminReq(), created.data.tenantId, {
       serviceName: "BoBi",
       agentName: "보비",
       greetingText: null,

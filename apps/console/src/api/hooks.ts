@@ -17,6 +17,14 @@ import type {
   KnowledgeItemDraft,
   OnboardingDraft,
 } from "./types";
+import type { LoginRequest } from "@colli/contracts";
+
+// ── 로그인 ──────────────────────────────────────────────────────
+export function useLogin() {
+  return useMutation({
+    mutationFn: (req: LoginRequest) => api.login(req),
+  });
+}
 
 export const qk = {
   tenant: (tenantId: string) => ["tenant", tenantId] as const,

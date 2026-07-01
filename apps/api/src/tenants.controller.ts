@@ -7,7 +7,20 @@
  * 실제 로직은 전부 서비스/포트에 있다 — 컨트롤러는 HTTP 파라미터 파싱 +
  * 응답 shape 조립만 담당한다.
  */
-import { Body, Controller, Delete, Get, Inject, Param, Post, Put, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Inject,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
 import type {
   TenantId,
   TenantStatus,
@@ -41,6 +54,7 @@ import {
   validateWebhookUrl,
   WebhookValidationError,
 } from "./webhook-validation.js";
+import { AuthGuard, type RequestWithAccount } from "./auth/auth.guard.js";
 
 /** apps/console 의 KnowledgeItem shape (types.ts) — id/category/question/answer/tags/updatedAt. */
 export interface KnowledgeItemDto {
@@ -108,6 +122,28 @@ export class TenantsController {
     return this.knowledge;
   }
 
+  /**
+   * tenant_admin 이 자기 tenantId 와 다른 :id 스코프 라우트에 접근하면 403.
+   * platform_admin 은 전부 허용. AuthGuard 가 req.account 를 부착한 뒤에만
+   * 호출 가능(이 컨트롤러의 모든 :id 라우트는 @UseGuards(AuthGuard) 적용됨).
+   */
+  private assertTenantScope(req: RequestWithAccount, id: string): void {
+    const account = req.account;
+    if (!account) {
+      // AuthGuard 를 반드시 거치므로 이론상 도달 불가 — 방어적으로 차단.
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: "forbidden", message: "authentication required" },
+      });
+    }
+    if (account.role === "tenant_admin" && account.tenantId !== id) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: "forbidden_tenant_scope", message: `no access to tenant: ${id}` },
+      });
+    }
+  }
+
   // ── 070 라우팅 조회(apps/voice 가 호출) ─────────────────────────
   @Get("resolve")
   async resolve(
@@ -152,8 +188,13 @@ export class TenantsController {
     }
   }
 
+  @UseGuards(AuthGuard)
   @Get(":id")
-  async getById(@Param("id") id: string): Promise<ApiResult<TenantSummary>> {
+  async getById(
+    @Req() req: RequestWithAccount,
+    @Param("id") id: string,
+  ): Promise<ApiResult<TenantSummary>> {
+    this.assertTenantScope(req, id);
     const tenant = await this.tenants.findById(id as TenantId);
     if (!tenant) {
       return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
@@ -161,8 +202,10 @@ export class TenantsController {
     return { ok: true, data: tenant };
   }
 
+  @UseGuards(AuthGuard)
   @Put(":id")
   async update(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Body()
     body: {
@@ -174,6 +217,7 @@ export class TenantsController {
       ownerEmail?: string | null;
     },
   ): Promise<ApiResult<TenantSummary>> {
+    this.assertTenantScope(req, id);
     const tenant = await this.tenants.update(id as TenantId, body);
     if (!tenant) {
       return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
@@ -182,10 +226,13 @@ export class TenantsController {
   }
 
   // ── 테넌트 에이전트 설정 ─────────────────────────────────────
+  @UseGuards(AuthGuard)
   @Get(":id/agent-config")
   async getAgentConfig(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
   ): Promise<ApiResult<TenantAgentConfig>> {
+    this.assertTenantScope(req, id);
     const config = await this.agentConfigs.get(id as TenantId);
     if (!config) {
       return { ok: false, error: { code: "agent_config_not_found", message: `no agent config for tenant: ${id}` } };
@@ -193,12 +240,15 @@ export class TenantsController {
     return { ok: true, data: config };
   }
 
+  @UseGuards(AuthGuard)
   @Put(":id/agent-config")
   async putAgentConfig(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Body() body: Omit<TenantAgentConfig, "tenantId">,
   ): Promise<ApiResult<TenantAgentConfig>> {
     try {
+      this.assertTenantScope(req, id);
       const config = await this.agentConfigs.upsert(id as TenantId, body);
       return { ok: true, data: config };
     } catch (err) {
@@ -207,16 +257,21 @@ export class TenantsController {
   }
 
   // ── 테넌트 의도 카탈로그 CRUD ────────────────────────────────
+  @UseGuards(AuthGuard)
   @Get(":id/intents")
   async listIntents(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
   ): Promise<ApiResult<TenantIntentDefinition[]>> {
+    this.assertTenantScope(req, id);
     const list = await this.intents.list(id as TenantId);
     return { ok: true, data: list };
   }
 
+  @UseGuards(AuthGuard)
   @Post(":id/intents")
   async createIntent(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Body()
     body: {
@@ -229,6 +284,7 @@ export class TenantsController {
     },
   ): Promise<ApiResult<TenantIntentDefinition>> {
     try {
+      this.assertTenantScope(req, id);
       if (!body.key?.trim() || !body.label?.trim()) {
         throw new WebhookValidationError("invalid_params", "key, label are required");
       }
@@ -239,8 +295,10 @@ export class TenantsController {
     }
   }
 
+  @UseGuards(AuthGuard)
   @Put(":id/intents/:key")
   async updateIntent(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Param("key") key: string,
     @Body()
@@ -252,6 +310,7 @@ export class TenantsController {
       enabled?: boolean;
     },
   ): Promise<ApiResult<TenantIntentDefinition>> {
+    this.assertTenantScope(req, id);
     const intent = await this.intents.update(id as TenantId, key, body);
     if (!intent) {
       return { ok: false, error: { code: "intent_not_found", message: `no intent: ${key}` } };
@@ -259,26 +318,34 @@ export class TenantsController {
     return { ok: true, data: intent };
   }
 
+  @UseGuards(AuthGuard)
   @Delete(":id/intents/:key")
   async deleteIntent(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Param("key") key: string,
   ): Promise<ApiResult<{ deleted: boolean }>> {
+    this.assertTenantScope(req, id);
     const deleted = await this.intents.delete(id as TenantId, key);
     return { ok: true, data: { deleted } };
   }
 
   // ── 테넌트 커스텀 tool CRUD (SSRF 방지 검증 포함) ────────────
+  @UseGuards(AuthGuard)
   @Get(":id/tools")
   async listTools(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
   ): Promise<ApiResult<CustomToolDefinition[]>> {
+    this.assertTenantScope(req, id);
     const list = await this.customTools.list(id as TenantId);
     return { ok: true, data: list };
   }
 
+  @UseGuards(AuthGuard)
   @Post(":id/tools")
   async createTool(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Body()
     body: {
@@ -292,6 +359,7 @@ export class TenantsController {
     },
   ): Promise<ApiResult<CustomToolDefinition>> {
     try {
+      this.assertTenantScope(req, id);
       validateCustomToolName(body.name);
       validateParamsSchema(body.paramsSchema);
       validateWebhookUrl(body.webhookUrl);
@@ -305,8 +373,10 @@ export class TenantsController {
     }
   }
 
+  @UseGuards(AuthGuard)
   @Put(":id/tools/:toolId")
   async updateTool(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Param("toolId") toolId: string,
     @Body()
@@ -320,6 +390,7 @@ export class TenantsController {
     },
   ): Promise<ApiResult<CustomToolDefinition>> {
     try {
+      this.assertTenantScope(req, id);
       if (body.paramsSchema !== undefined) validateParamsSchema(body.paramsSchema);
       if (body.webhookUrl !== undefined) validateWebhookUrl(body.webhookUrl);
       const tool = await this.customTools.update(id as TenantId, toolId as never, {
@@ -335,25 +406,35 @@ export class TenantsController {
     }
   }
 
+  @UseGuards(AuthGuard)
   @Delete(":id/tools/:toolId")
   async deleteTool(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Param("toolId") toolId: string,
   ): Promise<ApiResult<{ deleted: boolean }>> {
+    this.assertTenantScope(req, id);
     const deleted = await this.customTools.delete(id as TenantId, toolId as never);
     return { ok: true, data: { deleted } };
   }
 
   // ── 테넌트 KB(FAQ) CRUD ──────────────────────────────────────
   // kbRepoFor(id) 로 요청마다 테넌트 스코프된 저장소를 얻는다(위 헬퍼 참조).
+  @UseGuards(AuthGuard)
   @Get(":id/kb")
-  async listKb(@Param("id") id: string): Promise<ApiResult<KnowledgeItemDto[]>> {
+  async listKb(
+    @Req() req: RequestWithAccount,
+    @Param("id") id: string,
+  ): Promise<ApiResult<KnowledgeItemDto[]>> {
+    this.assertTenantScope(req, id);
     const list = await this.kbRepoFor(id).list();
     return { ok: true, data: list.map(toKnowledgeItemDto) };
   }
 
+  @UseGuards(AuthGuard)
   @Post(":id/kb")
   async createKb(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Body()
     body: {
@@ -364,6 +445,7 @@ export class TenantsController {
     },
   ): Promise<ApiResult<KnowledgeItemDto>> {
     try {
+      this.assertTenantScope(req, id);
       if (!body.category?.trim() || !body.question?.trim() || !body.answer?.trim()) {
         throw new WebhookValidationError(
           "invalid_params",
@@ -382,8 +464,10 @@ export class TenantsController {
     }
   }
 
+  @UseGuards(AuthGuard)
   @Put(":id/kb/:kbId")
   async updateKb(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Param("kbId") kbId: string,
     @Body()
@@ -395,6 +479,7 @@ export class TenantsController {
     },
   ): Promise<ApiResult<KnowledgeItemDto>> {
     try {
+      this.assertTenantScope(req, id);
       const repo = this.kbRepoFor(id);
       const existing = await repo.getById(kbId as KnowledgeItemId);
       if (!existing) {
@@ -412,11 +497,14 @@ export class TenantsController {
     }
   }
 
+  @UseGuards(AuthGuard)
   @Delete(":id/kb/:kbId")
   async deleteKb(
+    @Req() req: RequestWithAccount,
     @Param("id") id: string,
     @Param("kbId") kbId: string,
   ): Promise<ApiResult<{ deleted: boolean }>> {
+    this.assertTenantScope(req, id);
     const repo = this.kbRepoFor(id);
     const existing = await repo.getById(kbId as KnowledgeItemId);
     if (!existing) {

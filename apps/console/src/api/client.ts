@@ -9,6 +9,11 @@
  *
  * 모든 엔드포인트는 tenantId 로 스코프된다(멀티테넌트 격리, 1차 방어선은
  * apps/api 몫이지만 콘솔은 항상 tenantId 를 경로에 포함해 호출한다).
+ *
+ * 인증: fetch 모드는 실제 로그인(POST /auth/login)이 필요하다. "현재 테넌트
+ * ID" 는 더 이상 하드코딩 상수가 아니라 로그인 후 저장된 세션(lib/session.ts)의
+ * account.tenantId 에서 읽는다 — getCurrentTenantId() 참조. fixture 모드는
+ * 로그인 화면을 건너뛰고 BoBi fixture 테넌트로 고정 진입한다(FIXTURE_TENANT_ID).
  */
 import type {
   TenantSummary,
@@ -23,7 +28,7 @@ import type {
   OnboardingDraft,
   OnboardingResult,
 } from "./types";
-import type { TenantIntentId, TenantToolId } from "@colli/contracts";
+import type { TenantIntentId, TenantToolId, LoginRequest, LoginResponse } from "@colli/contracts";
 import {
   TENANTS,
   AGENT_CONFIGS,
@@ -32,8 +37,11 @@ import {
   KB_BY_TENANT,
   BOBI_TENANT_ID,
 } from "./fixtures";
+import { getSession, getToken } from "../lib/session";
 
 export interface ConsoleApi {
+  login(req: LoginRequest): Promise<LoginResponse>;
+
   submitOnboarding(draft: OnboardingDraft): Promise<OnboardingResult>;
 
   getTenant(tenantId: string): Promise<TenantSummary>;
@@ -83,13 +91,21 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/
 export const IS_FIXTURE = DATA_SOURCE !== "fetch";
 
 /**
- * 콘솔이 다루는 "현재 로그인한 테넌트" 식별자(실제 인증 붙기 전까지 고정).
- * fixture 모드는 fixtures.ts 의 목 ID, fetch 모드는 실제 DB의 cuid 가 필요하므로
- * VITE_DEFAULT_TENANT_ID 로 오버라이드 가능하게 한다(실 인증 붙으면 이 상수는 제거).
+ * fixture 모드 전용 고정 테넌트 ID(BoBi 목 데이터). 로그인 화면을 건너뛰고
+ * 곧바로 이 테넌트로 진입한다 — 기존 5개 렌더 테스트가 의존하는 값이다.
  */
-export const DEFAULT_TENANT_ID: string =
-  (import.meta.env.VITE_DEFAULT_TENANT_ID as string | undefined) ??
-  (BOBI_TENANT_ID as unknown as string);
+export const FIXTURE_TENANT_ID: string = BOBI_TENANT_ID as unknown as string;
+
+/**
+ * "현재 테넌트 ID" — DEFAULT_TENANT_ID 하드코딩을 대체하는 실제 메커니즘.
+ * fixture 모드: 항상 FIXTURE_TENANT_ID.
+ * fetch 모드: 로그인 후 저장된 세션(lib/session.ts)의 account.tenantId.
+ *             로그인 전이면 null(호출부는 라우트 가드로 이 상태를 막는다).
+ */
+export function getCurrentTenantId(): string | null {
+  if (IS_FIXTURE) return FIXTURE_TENANT_ID;
+  return getSession()?.account.tenantId ? String(getSession()!.account.tenantId) : null;
+}
 
 // ── Fixture 구현 (dev 기본) ─────────────────────────────────────
 function makeFixtureApi(): ConsoleApi {
@@ -130,6 +146,10 @@ function makeFixtureApi(): ConsoleApi {
   };
 
   return {
+    // fixture 모드는 로그인 화면을 건너뛰므로 실제로 호출되지 않는다(인터페이스 충족용).
+    login: () =>
+      Promise.reject(new Error("login()은 fixture 모드에서 지원하지 않습니다.")),
+
     submitOnboarding: (draft) => {
       const newTenant: TenantSummary = {
         tenantId: `tenant_${Date.now()}` as unknown as TenantSummary["tenantId"],
@@ -294,8 +314,13 @@ interface ApiEnvelope<T> {
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
     ...init,
   });
   if (!res.ok) {
@@ -318,6 +343,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 function makeFetchApi(): ConsoleApi {
   const base = (id: string) => `/tenants/${encodeURIComponent(id)}`;
   return {
+    login: (req) => http("/auth/login", { method: "POST", body: JSON.stringify(req) }),
+
     submitOnboarding: (draft) =>
       http("/onboarding", { method: "POST", body: JSON.stringify(draft) }),
 

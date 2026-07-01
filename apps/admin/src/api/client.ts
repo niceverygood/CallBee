@@ -97,6 +97,15 @@ function makeFixtureApi(): AdminApi {
 }
 
 // ── Fetch 구현 (실제 백엔드 통합) ───────────────────────────────
+// apps/api 는 모든 라우트를 {ok:true,data}|{ok:false,error} 봉투(ToolInvocationResult
+// 와 동일 컨벤션)로 응답한다. 여기서 그 봉투를 벗겨 순수 데이터만 AdminApi
+// 인터페이스로 흘려보낸다(apps/console/src/api/client.ts 의 http() 헬퍼와 동일 패턴).
+interface ApiEnvelope<T> {
+  ok: boolean;
+  data?: T;
+  error?: { code: string; message: string };
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -106,7 +115,17 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`API ${init?.method ?? "GET"} ${path} → ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const body = (await res.json()) as ApiEnvelope<T> | T;
+  if (body && typeof body === "object" && "ok" in body) {
+    const envelope = body as ApiEnvelope<T>;
+    if (!envelope.ok) {
+      throw new Error(
+        `API ${init?.method ?? "GET"} ${path} → ${envelope.error?.code ?? "error"}: ${envelope.error?.message ?? "unknown error"}`,
+      );
+    }
+    return envelope.data as T;
+  }
+  return body as T;
 }
 
 function makeFetchApi(): AdminApi {

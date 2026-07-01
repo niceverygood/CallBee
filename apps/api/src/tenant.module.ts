@@ -128,6 +128,8 @@ const customToolExecutorProvider: Provider = {
     resolverProvider,
     customToolExecutorProvider,
   ],
-  exports: [TenantResolverService, CustomToolExecutor],
+  // TENANT_REPO/TENANT_AGENT_CONFIG_REPO 는 AuthModule(auth.controller.ts 의
+  // POST /admin/tenants — 신규 테넌트+에이전트설정+계정 생성)이 재사용한다.
+  exports: [TenantResolverService, CustomToolExecutor, TENANT_REPO, TENANT_AGENT_CONFIG_REPO],
 })
 export class TenantModule {}

@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import type { CallSessionId, TenantId } from "@colli/contracts";
 import { makeHarness, makeSubscriber } from "./harness.js";
-import { makeTenantHarness } from "./tenant-harness.js";
+import { makeTenantHarness, mockPlatformAdminReq } from "./tenant-harness.js";
 import { ToolsController } from "../tools.controller.js";
 
 // docs/tenant-platform-architecture.md §4.3 의 BoBi 기본 의도 카탈로그(7종).
@@ -50,7 +50,7 @@ describe("E2E 스모크: BoBi(테넌트 #1) — 기존 8개 tool 이 tenantId �
     expect(bobi.ok).toBe(true);
     if (!bobi.ok) return;
 
-    await th.controller.putAgentConfig(bobi.data.tenantId, {
+    await th.controller.putAgentConfig(mockPlatformAdminReq(), bobi.data.tenantId, {
       serviceName: "BoBi",
       agentName: "보비",
       greetingText: null,
@@ -61,7 +61,7 @@ describe("E2E 스모크: BoBi(테넌트 #1) — 기존 8개 tool 이 tenantId �
       maxIntentAttempts: 2,
     });
     for (const intent of BOBI_DEFAULT_TENANT_INTENTS_FIXTURE) {
-      await th.controller.createIntent(bobi.data.tenantId, {
+      await th.controller.createIntent(mockPlatformAdminReq(), bobi.data.tenantId, {
         ...intent,
         keywords: [...intent.keywords],
       });
@@ -116,7 +116,7 @@ describe("E2E 스모크: 신규 가상 테넌트(slug=test-restaurant) — 커�
     const tenantId = created.data.tenantId;
 
     // 2) 에이전트 설정
-    await th.controller.putAgentConfig(tenantId, {
+    await th.controller.putAgentConfig(mockPlatformAdminReq(), tenantId, {
       serviceName: "테스트 식당",
       agentName: "식당봇",
       greetingText: "안녕하세요, 테스트 식당입니다.",
@@ -128,7 +128,7 @@ describe("E2E 스모크: 신규 가상 테넌트(slug=test-restaurant) — 커�
     });
 
     // 3) 의도 카탈로그(자유 정의)
-    await th.controller.createIntent(tenantId, {
+    await th.controller.createIntent(mockPlatformAdminReq(), tenantId, {
       key: "reservation",
       label: "예약",
       keywords: ["예약", "자리"],
@@ -137,7 +137,7 @@ describe("E2E 스모크: 신규 가상 테넌트(slug=test-restaurant) — 커�
     });
 
     // 4) 커스텀 tool 등록(mock webhook 서버 대상)
-    const tool = await th.controller.createTool(tenantId, {
+    const tool = await th.controller.createTool(mockPlatformAdminReq(), tenantId, {
       name: "check_reservation",
       description: "예약 가능 여부를 확인한다.",
       paramsSchema: {
@@ -155,7 +155,7 @@ describe("E2E 스모크: 신규 가상 테넌트(slug=test-restaurant) — 커�
     expect(tool.ok).toBe(true);
 
     // 상태를 active 로 전환(운영 개시)
-    await th.controller.update(tenantId, { status: "active" });
+    await th.controller.update(mockPlatformAdminReq(), tenantId, { status: "active" });
 
     // 5) 070 라우팅 조회 — apps/voice 가 인바운드 콜에서 호출하는 것과 동일 경로
     const resolved = await th.controller.resolve("07033334444");
@@ -216,7 +216,7 @@ describe("E2E 스모크: 신규 가상 테넌트(slug=test-restaurant) — 커�
     });
     if (!created.ok) throw new Error("setup failed");
 
-    const res = await th.controller.createTool(created.data.tenantId, {
+    const res = await th.controller.createTool(mockPlatformAdminReq(), created.data.tenantId, {
       name: "create_ticket", // 시스템 tool 과 충돌
       description: "충돌 시도",
       paramsSchema: { type: "object", properties: {}, additionalProperties: false },

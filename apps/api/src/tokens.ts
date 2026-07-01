@@ -16,3 +16,6 @@ export const TENANT_AGENT_CONFIG_REPO = Symbol("TenantAgentConfigRepository");
 export const TENANT_INTENT_REPO = Symbol("TenantIntentRepository");
 export const CUSTOM_TOOL_REPO = Symbol("CustomToolRepository");
 export const WEBHOOK_TOOL_INVOKER = Symbol("WebhookToolInvoker");
+
+// ── v3(로그인 계정) 신규 포트 토큰 ───────────────────────────────
+export const ADMIN_ACCOUNT_REPO = Symbol("AdminAccountRepository");

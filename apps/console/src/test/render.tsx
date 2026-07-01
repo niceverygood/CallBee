@@ -4,7 +4,7 @@ import type { RenderResult } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TenantContext } from "../lib/tenant";
-import { DEFAULT_TENANT_ID } from "../api/client";
+import { FIXTURE_TENANT_ID } from "../api/client";
 
 /**
  * 테스트용 렌더 헬퍼: QueryClient + MemoryRouter 로 감싼다.
@@ -30,7 +30,7 @@ export function renderWithProviders(
  */
 export function renderWithTenant(
   ui: ReactElement,
-  { tenantId = DEFAULT_TENANT_ID, route = "/" }: { tenantId?: string; route?: string } = {},
+  { tenantId = FIXTURE_TENANT_ID, route = "/" }: { tenantId?: string; route?: string } = {},
 ): RenderResult {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },

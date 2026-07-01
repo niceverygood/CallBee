@@ -8,16 +8,17 @@ const NAV = [
   { to: "/tickets", label: "티켓" },
   { to: "/callbacks", label: "콜백 큐" },
   { to: "/kb", label: "지식베이스" },
+  { to: "/tenants-admin", label: "테넌트 관리" },
 ];
 
 export function AppShell() {
-  const { operator, logout } = useAuth();
+  const { account, logout } = useAuth();
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="px-4 py-5">
-          <div className="text-base font-bold text-brand-700">BoBi 고객센터</div>
-          <div className="text-xs text-slate-400">관리자 대시보드</div>
+          <div className="text-base font-bold text-brand-700">콜비 총괄관리자</div>
+          <div className="text-xs text-slate-400">Colli 플랫폼 관리 대시보드</div>
         </div>
         <nav className="flex-1 space-y-1 px-2">
           {NAV.map((n) => (
@@ -49,7 +50,7 @@ export function AppShell() {
               </span>
             )}
           </div>
-          <div className="mb-2 truncate">운영자: {operator}</div>
+          <div className="mb-2 truncate">총괄관리자: {account?.email ?? "-"}</div>
           <button
             onClick={logout}
             className="w-full rounded-lg border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"

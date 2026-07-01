@@ -1,21 +1,31 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { IS_FIXTURE, DEFAULT_TENANT_ID } from "../api/client";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { IS_FIXTURE, getCurrentTenantId } from "../api/client";
 import { TenantContext } from "../lib/tenant";
 import { useTenant } from "../api/hooks";
-
-const NAV = [
-  { to: "/onboarding", label: "온보딩" },
-  { to: `/tenants/${DEFAULT_TENANT_ID}/settings/agent`, label: "에이전트 설정" },
-  { to: `/tenants/${DEFAULT_TENANT_ID}/settings/intents`, label: "의도 카탈로그" },
-  { to: `/tenants/${DEFAULT_TENANT_ID}/settings/tools`, label: "커스텀 Tool" },
-  { to: `/tenants/${DEFAULT_TENANT_ID}/settings/kb`, label: "지식베이스" },
-];
+import { useSession } from "../lib/useSession";
+import { logoutSession } from "../lib/session";
 
 export function AppShell() {
-  const { data: tenant } = useTenant(DEFAULT_TENANT_ID);
+  const navigate = useNavigate();
+  const session = useSession();
+  const tenantId = getCurrentTenantId() ?? "";
+  const { data: tenant } = useTenant(tenantId);
+
+  const NAV = [
+    { to: "/onboarding", label: "온보딩" },
+    { to: `/tenants/${tenantId}/settings/agent`, label: "에이전트 설정" },
+    { to: `/tenants/${tenantId}/settings/intents`, label: "의도 카탈로그" },
+    { to: `/tenants/${tenantId}/settings/tools`, label: "커스텀 Tool" },
+    { to: `/tenants/${tenantId}/settings/kb`, label: "지식베이스" },
+  ];
+
+  const onLogout = () => {
+    logoutSession();
+    navigate("/login", { replace: true });
+  };
 
   return (
-    <TenantContext.Provider value={{ tenantId: DEFAULT_TENANT_ID }}>
+    <TenantContext.Provider value={{ tenantId }}>
       <div className="flex min-h-screen">
         <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
           <div className="px-4 py-5">
@@ -55,6 +65,20 @@ export function AppShell() {
             </div>
             {tenant ? (
               <div className="truncate">070: {tenant.phoneNumber}</div>
+            ) : null}
+            {!IS_FIXTURE && session ? (
+              <div className="mt-2 truncate" title={session.account.email}>
+                {session.account.email}
+              </div>
+            ) : null}
+            {!IS_FIXTURE ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                로그아웃
+              </button>
             ) : null}
           </div>
         </aside>

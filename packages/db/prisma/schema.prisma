@@ -148,8 +148,34 @@ model Tenant {
   consentRecords   ConsentRecord[]
   callbackRequests CallbackRequest[]
   toolInvocations  ToolInvocation[]
+  adminAccounts    AdminAccount[]
 
   @@index([status])
+}
+
+// ── 관리자 계정(로그인) ──────────────────────────────────────────
+// platform_admin: 콜비 총괄관리자. tenantId 없음 — 모든 테넌트 조회/생성 가능
+//   (apps/admin, "콜비 총괄관리자").
+// tenant_admin: 테넌트 하나에 스코프. BoBi(테넌트 #1)도 예외 없이 이 방식으로
+//   자기 계정을 갖는다(apps/console, "에이전트 스튜디오").
+enum AdminRole {
+  platform_admin
+  tenant_admin
+}
+
+model AdminAccount {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  /// scrypt 해시(node:crypto). 평문 저장 금지.
+  passwordHash String
+  role         AdminRole
+  /// platform_admin 이면 null. tenant_admin 이면 필수(테넌트 격리).
+  tenantId     String?
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([tenantId])
 }
 
 // ── 테넌트별 에이전트 설정 (system prompt/인사말 합성 재료) ────────
