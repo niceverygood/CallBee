@@ -25,6 +25,9 @@ export {
   type TenantSystemPromptContext,
 } from "./system-prompt.js";
 
+// 영업시간 판정/요약 (v3 사업장 커스텀 — Asia/Seoul 고정 순수 함수)
+export { isWithinBusinessHours, summarizeBusinessHours } from "./business-hours.js";
+
 // 의도 분류
 export {
   classifyIntent,

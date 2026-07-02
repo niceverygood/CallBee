@@ -21,22 +21,27 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import type {
-  TenantId,
-  TenantStatus,
-  TenantPlan,
-  ResolvedTenantAgentContext,
-  TenantSummary,
-  TenantAgentConfig,
-  TenantIntentDefinition,
-  CustomToolDefinition,
-  KnowledgeItemId,
+import {
+  AFTER_HOURS_MODES,
+  type AfterHoursMode,
+  type TenantId,
+  type TenantStatus,
+  type TenantPlan,
+  type ResolvedTenantAgentContext,
+  type TenantSummary,
+  type TenantAgentConfig,
+  type TenantIntentDefinition,
+  type CustomToolDefinition,
+  type KnowledgeItemId,
 } from "@colli/contracts";
 import type {
   TenantRepository,
   TenantAgentConfigRepository,
   TenantIntentRepository,
   CustomToolRepository,
+  CallSessionReadRepository,
+  TenantCallListItem,
+  TenantCallDetail,
 } from "./tenant.ports.js";
 import type { KnowledgeRepository, KnowledgeRecord } from "./ports.js";
 import { PrismaKnowledgeRepository } from "./adapters/prisma.js";
@@ -47,6 +52,7 @@ import {
   TENANT_INTENT_REPO,
   CUSTOM_TOOL_REPO,
   KNOWLEDGE_REPO,
+  CALL_SESSION_READ_REPO,
 } from "./tokens.js";
 import {
   validateCustomToolName,
@@ -55,6 +61,9 @@ import {
   WebhookValidationError,
 } from "./webhook-validation.js";
 import { AuthGuard, type RequestWithAccount } from "./auth/auth.guard.js";
+// 순환 아님: signup.controller.ts 는 이 파일에서 type(ApiResult)만 import 한다
+// (type-only import 는 컴파일 시 제거되므로 런타임 순환 의존이 발생하지 않는다).
+import { isValidPhoneNumberFormat } from "./signup.controller.js";
 
 /** apps/console 의 KnowledgeItem shape (types.ts) — id/category/question/answer/tags/updatedAt. */
 export interface KnowledgeItemDto {
@@ -89,6 +98,50 @@ function errResult(err: unknown): ApiResult<never> {
   return { ok: false, error: { code: "internal_error", message } };
 }
 
+/** ?limit= 파싱 + 1~100 클램프(기본 50 — tenant.ports.ts 계약 주석 참조). */
+function clampCallsLimit(raw: string | undefined): number {
+  const n = raw === undefined ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return 50;
+  return Math.min(100, Math.max(1, Math.trunc(n)));
+}
+
+/** ?offset= 파싱(음수/비숫자는 0). */
+function clampCallsOffset(raw: string | undefined): number {
+  const n = raw === undefined ? NaN : Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.trunc(n);
+}
+
+/**
+ * PUT agent-config 의 v3 신규 필드 검증(worker-briefs §5).
+ * - afterHoursMode: AFTER_HOURS_MODES 중 하나(미지정은 허용 — DB 기본 "callback").
+ * - transferPhoneNumber: 숫자/하이픈 9~13자리(null/미지정은 "호전환 없음"으로 허용).
+ * 실패 시 WebhookValidationError("invalid_params") → 응답 봉투 {ok:false,...}.
+ */
+function validateAgentConfigCustomFields(
+  body: Omit<TenantAgentConfig, "tenantId">,
+): void {
+  if (
+    body.afterHoursMode !== undefined &&
+    !AFTER_HOURS_MODES.includes(body.afterHoursMode as AfterHoursMode)
+  ) {
+    throw new WebhookValidationError(
+      "invalid_params",
+      `afterHoursMode 는 AFTER_HOURS_MODES 중 하나여야 합니다: ${String(body.afterHoursMode)}`,
+    );
+  }
+  if (
+    body.transferPhoneNumber !== undefined &&
+    body.transferPhoneNumber !== null &&
+    !isValidPhoneNumberFormat(body.transferPhoneNumber)
+  ) {
+    throw new WebhookValidationError(
+      "invalid_params",
+      "transferPhoneNumber 는 숫자/하이픈만, 숫자 9~13자리여야 합니다",
+    );
+  }
+}
+
 @Controller("tenants")
 export class TenantsController {
   constructor(
@@ -105,6 +158,8 @@ export class TenantsController {
     // 가능했지만, 명시적 @Inject 를 추가해도 무해하며 두 실행 경로 모두에서
     // 안전하게 동작한다.
     @Inject(TenantResolverService) private readonly resolver: TenantResolverService,
+    @Inject(CALL_SESSION_READ_REPO)
+    private readonly callSessions: CallSessionReadRepository,
   ) {}
 
   /**
@@ -249,8 +304,54 @@ export class TenantsController {
   ): Promise<ApiResult<TenantAgentConfig>> {
     try {
       this.assertTenantScope(req, id);
+      validateAgentConfigCustomFields(body);
       const config = await this.agentConfigs.upsert(id as TenantId, body);
       return { ok: true, data: config };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
+  // ── 테넌트 통화 기록 열람(콘솔 "통화 기록" 화면, product-spec §4.9) ──
+  // AuthGuard + assertTenantScope — 테넌트는 자기 통화만 열람(타 테넌트 403).
+  @UseGuards(AuthGuard)
+  @Get(":id/calls")
+  async listCalls(
+    @Req() req: RequestWithAccount,
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ): Promise<ApiResult<TenantCallListItem[]>> {
+    // try 밖에서 호출 — ForbiddenException 이 그대로 전파되어 HTTP 403 이 된다
+    // (try 안에서 잡히면 errResult 가 200 봉투로 삼켜버림).
+    this.assertTenantScope(req, id);
+    try {
+      const list = await this.callSessions.listByTenant(id as TenantId, {
+        limit: clampCallsLimit(limit),
+        offset: clampCallsOffset(offset),
+      });
+      return { ok: true, data: list };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
+  @UseGuards(AuthGuard)
+  @Get(":id/calls/:callId")
+  async getCallDetail(
+    @Req() req: RequestWithAccount,
+    @Param("id") id: string,
+    @Param("callId") callId: string,
+  ): Promise<ApiResult<TenantCallDetail>> {
+    // try 밖에서 호출 — ForbiddenException 이 그대로 전파되어 HTTP 403 이 된다.
+    this.assertTenantScope(req, id);
+    try {
+      // 타 테넌트 소유 통화는 저장소가 null 을 반환(존재 자체를 숨김 — 격리).
+      const detail = await this.callSessions.findByIdForTenant(id as TenantId, callId);
+      if (!detail) {
+        return { ok: false, error: { code: "call_not_found", message: `no call: ${callId}` } };
+      }
+      return { ok: true, data: detail };
     } catch (err) {
       return errResult(err);
     }

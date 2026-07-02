@@ -112,6 +112,8 @@ enum TenantStatus {
   onboarding // 가입은 했으나 070/설정 세팅 중, 아직 실통화 미수신
   active // 정상 운영
   suspended // 결제/정책 위반 등으로 일시 정지(수신 거부)
+  pending_approval // 셀프 가입 신청 접수 — 총괄관리자 승인 대기(콘솔은 "승인 대기중" 화면만)
+  rejected // 총괄관리자 반려(rejectionReason 필수 기재) — 재신청은 로드맵
 }
 
 enum TenantPlan {
@@ -128,13 +130,31 @@ model Tenant {
   /// 업체 표시명. 예: "BoBi", "그린내과의원"
   name        String
   /// 업종 라벨(자유 텍스트, 온보딩 시 참고용 — 강제 카탈로그 아님). 예: "보험설계사 SaaS", "식당", "병원"
+  /// 셀프 가입에서는 industryKey 프리셋의 label(또는 "기타" 직접 입력값)이 여기에 저장돼
+  /// 기존 표시 코드가 무수정으로 동작한다.
   industryLabel String?
+  /// 셀프 가입 위저드의 업종 프리셋 key(@colli/contracts INDUSTRY_PRESETS 참조).
+  /// 관리자 직접 생성/기존 테넌트는 null 가능. "other" 면 industryLabel 에 직접 입력값.
+  industryKey String?
   /// 테넌트가 소유한 070 번호(E.164). ClawOps 인바운드 라우팅 키.
+  /// 셀프 가입 신청 시점에는 실번호가 없으므로 "pending-{slug}" 플레이스홀더를 저장하고
+  /// (unique 제약/기존 non-null 타입 유지), 승인 시 관리자가 실 070 번호로 교체 배정한다.
+  /// 판별은 @colli/contracts 의 isPhoneNumberAssigned() 헬퍼 사용(컬럼 타입 변경 금지).
   phoneNumber String       @unique
   status      TenantStatus @default(onboarding)
   plan        TenantPlan   @default(trial)
   /// 대시보드 로그인 소유자 이메일(간단 식별, 별도 Auth 테이블은 v1 범위 밖)
   ownerEmail  String?
+  /// 사업장 연락처(셀프 가입 위저드 2단계 입력값 — 승인 심사·연락용, 070 아님)
+  contactPhone String?
+  /// 셀프 가입 신청 시각(관리자 직접 생성이면 null — 신청 큐 정렬 기준)
+  appliedAt   DateTime?
+  /// 총괄관리자 승인 시각(승인 시 status=active 와 함께 기록)
+  approvedAt  DateTime?
+  /// 총괄관리자 반려 시각
+  rejectedAt  DateTime?
+  /// 반려 사유(status=rejected 일 때 필수 기재 — 콘솔 승인대기 화면에 그대로 노출)
+  rejectionReason String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -210,6 +230,27 @@ model TenantAgentConfig {
   intentUnresolvedFallbackTool String @default("request_callback")
   /// 의도 파악 최대 재시도 횟수(무한루프 방지, GUARDRAIL 취지 계승)
   maxIntentAttempts Int @default(2)
+
+  // ── v3 커스텀 확장(전부 optional/기본값 — null/기본값이면 v2 프롬프트 출력과 100% 동일해야 함) ──
+  /// 마무리 멘트. null 이면 플랫폼 기본 "# 마무리" 섹션 문구 그대로(골든 패리티).
+  closingText String?
+  /// 영업시간(요일별 open/close, 휴무일). @colli/contracts 의 BusinessHours 타입과 1:1(Json 직렬화).
+  /// null 이면 "24시간/영업시간 미설정" — 영업시간 관련 섹션·분기 자체가 생성되지 않는다.
+  businessHours Json?
+  /// 영업시간 외 응대 방식(@colli/contracts AFTER_HOURS_MODES: "callback" | "announce_hours").
+  /// businessHours 가 null 이면 이 값은 무시된다.
+  afterHoursMode String @default("callback")
+  /// 영업시간 외 첫 안내 멘트 커스텀. null 이면 mode 별 기본 템플릿으로 합성.
+  afterHoursText String?
+  /// 담당자 호전환 번호(E.164). null 이면 warm transfer 대신 콜백/티켓 폴백만 안내.
+  transferPhoneNumber String?
+  /// 긴급 키워드(예: ["화재","가스","응급"]). 감지 시 즉시 사람 인계(escalate_to_human)를
+  /// 최우선으로 지시하는 프롬프트 섹션이 렌더된다. 빈 배열이면 섹션 생략(골든 패리티).
+  emergencyKeywords String[] @default([])
+  /// 문자(SMS/알림톡) 안내 설정. @colli/contracts 의 SmsSettings 타입과 1:1(Json 직렬화).
+  /// null 이면 문자 안내 기능 전체 off + 관련 프롬프트 문구 미생성. v1 은 설정 저장 +
+  /// 프롬프트/정책 반영까지(실발송 자동화는 로드맵 — 발송 인프라는 services/notifications 재사용).
+  smsSettings Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

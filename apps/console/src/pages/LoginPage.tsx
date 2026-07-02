@@ -1,15 +1,16 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useLogin } from "../api/hooks";
 import { loginSession } from "../lib/session";
 import { useSession } from "../lib/useSession";
-import { inputCls } from "../components/FormField";
+import { FormField, inputCls } from "../components/FormField";
+import { Logo, btnPrimary } from "../components/ui";
 
 /**
- * 콘솔(tenant_admin) 전용 로그인 화면.
- * platform_admin 계정으로 로그인을 시도하면 거부하고 apps/admin 을 안내한다
- * (역할 스왑 방지 — apps/admin 은 반대로 tenant_admin 을 거부한다).
+ * 콘솔(사업장 관리자) 전용 로그인 화면.
+ * 총괄관리자(platform_admin) 계정으로 로그인을 시도하면 거부하고 관리자 앱을
+ * 안내한다(역할 스왑 방지 — apps/admin 은 반대로 tenant_admin 을 거부한다).
  */
 export function LoginPage() {
   const [email, setEmail] = useState("");
@@ -32,7 +33,7 @@ export function LoginPage() {
         onSuccess: (res) => {
           if (res.account.role !== "tenant_admin" || !res.account.tenantId) {
             setRoleError(
-              "총괄관리자 계정입니다. 이 계정으로는 콘솔에 로그인할 수 없습니다 — 관리자 앱(apps/admin)을 이용하세요.",
+              "총괄관리자 계정이에요. 이 계정은 관리자 앱에서 로그인해 주세요.",
             );
             return;
           }
@@ -43,58 +44,59 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-ink-50 p-4">
+      <Link to="/" className="mb-6" aria-label="콜비 홈">
+        <Logo size="lg" />
+      </Link>
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+        className="w-full max-w-sm space-y-4 rounded-xl border border-ink-200 bg-white p-6 shadow-sm"
       >
-        <h1 className="text-lg font-bold text-slate-900">Colli 콘솔</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          테넌트 관리자 로그인 (tenant_admin 전용)
-        </p>
+        <div>
+          <h1 className="text-xl font-bold text-ink-900">로그인</h1>
+          <p className="mt-1 text-sm text-ink-500">사업장 콘솔에 로그인해요.</p>
+        </div>
 
-        <label className="mt-4 block text-xs font-medium text-slate-500">
-          이메일
+        <FormField label="이메일">
           <input
             type="email"
             required
             autoFocus
-            className={`mt-1 ${inputCls}`}
+            className={inputCls}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@example.com"
+            placeholder="owner@example.com"
           />
-        </label>
+        </FormField>
 
-        <label className="mt-3 block text-xs font-medium text-slate-500">
-          비밀번호
+        <FormField label="비밀번호">
           <input
             type="password"
             required
-            className={`mt-1 ${inputCls}`}
+            className={inputCls}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
           />
-        </label>
+        </FormField>
 
-        <button
-          type="submit"
-          disabled={login.isPending}
-          className="mt-4 w-full rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={login.isPending} className={`${btnPrimary} w-full`}>
           {login.isPending ? "로그인 중…" : "로그인"}
         </button>
 
-        {roleError ? (
-          <p className="mt-3 text-sm text-red-600">{roleError}</p>
-        ) : null}
+        {roleError ? <p className="text-sm text-danger-600">{roleError}</p> : null}
         {!roleError && login.isError ? (
-          <p className="mt-3 text-sm text-red-600">
-            로그인 실패:{" "}
-            {login.error instanceof Error ? login.error.message : String(login.error)}
+          <p className="text-sm text-danger-600">
+            이메일 또는 비밀번호를 확인해 주세요.
           </p>
         ) : null}
+
+        <p className="border-t border-ink-100 pt-4 text-center text-[13px] text-ink-500">
+          아직 계정이 없으신가요?{" "}
+          <Link to="/signup" className="font-semibold text-brand-600 hover:underline">
+            무료로 시작하기
+          </Link>
+        </p>
       </form>
     </div>
   );

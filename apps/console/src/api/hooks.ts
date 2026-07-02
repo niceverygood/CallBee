@@ -15,9 +15,8 @@ import type {
   TenantIntentDraft,
   CustomToolDraft,
   KnowledgeItemDraft,
-  OnboardingDraft,
 } from "./types";
-import type { LoginRequest } from "@colli/contracts";
+import type { LoginRequest, SignupRequest } from "@colli/contracts";
 
 // ── 로그인 ──────────────────────────────────────────────────────
 export function useLogin() {
@@ -32,12 +31,16 @@ export const qk = {
   intents: (tenantId: string) => ["tenant", tenantId, "intents"] as const,
   tools: (tenantId: string) => ["tenant", tenantId, "tools"] as const,
   kb: (tenantId: string) => ["tenant", tenantId, "kb"] as const,
+  calls: (tenantId: string, limit?: number) =>
+    ["tenant", tenantId, "calls", limit ?? "all"] as const,
+  call: (tenantId: string, callId: string) =>
+    ["tenant", tenantId, "calls", "detail", callId] as const,
 };
 
-// ── 온보딩 ──────────────────────────────────────────────────────
-export function useSubmitOnboarding() {
+// ── 가입 위저드(POST /signup) ───────────────────────────────────
+export function useSignup() {
   return useMutation({
-    mutationFn: (draft: OnboardingDraft) => api.submitOnboarding(draft),
+    mutationFn: (req: SignupRequest) => api.signup(req),
   });
 }
 
@@ -174,5 +177,22 @@ export function useDeleteKb(tenantId: string) {
   return useMutation({
     mutationFn: (id: string) => api.deleteKb(tenantId, id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.kb(tenantId) }),
+  });
+}
+
+// ── 통화 기록 ───────────────────────────────────────────────────
+export function useCalls(tenantId: string, opts?: { limit?: number }) {
+  return useQuery({
+    queryKey: qk.calls(tenantId, opts?.limit),
+    queryFn: () => api.listCalls(tenantId, opts),
+    enabled: !!tenantId,
+  });
+}
+
+export function useCall(tenantId: string, callId: string) {
+  return useQuery({
+    queryKey: qk.call(tenantId, callId),
+    queryFn: () => api.getCall(tenantId, callId),
+    enabled: !!tenantId && !!callId,
   });
 }

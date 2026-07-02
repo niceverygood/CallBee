@@ -28,6 +28,7 @@ import {
   WEBHOOK_TOOL_INVOKER,
   TRACE_PORT,
   KNOWLEDGE_REPO,
+  CALL_SESSION_READ_REPO,
 } from "./tokens.js";
 import {
   InMemoryTenantRepository,
@@ -35,12 +36,14 @@ import {
   InMemoryTenantIntentRepository,
   InMemoryCustomToolRepository,
   InMemoryWebhookToolInvoker,
+  InMemoryCallSessionReadRepository,
 } from "./adapters/tenant-in-memory.js";
 import {
   PrismaTenantRepository,
   PrismaTenantAgentConfigRepository,
   PrismaTenantIntentRepository,
   PrismaCustomToolRepository,
+  PrismaCallSessionReadRepository,
 } from "./adapters/tenant-prisma.js";
 import { InMemoryTrace, InMemoryKnowledgeRepository } from "./adapters/in-memory.js";
 import type {
@@ -58,6 +61,7 @@ const inMemoryPortProviders: Provider[] = [
   { provide: TENANT_AGENT_CONFIG_REPO, useClass: InMemoryTenantAgentConfigRepository },
   { provide: TENANT_INTENT_REPO, useClass: InMemoryTenantIntentRepository },
   { provide: CUSTOM_TOOL_REPO, useClass: InMemoryCustomToolRepository },
+  { provide: CALL_SESSION_READ_REPO, useClass: InMemoryCallSessionReadRepository },
   { provide: WEBHOOK_TOOL_INVOKER, useClass: InMemoryWebhookToolInvoker },
   // ToolsModule 이 이미 TRACE_PORT/KNOWLEDGE_REPO 를 바인딩하지만, TenantModule 을
   // 단독으로도 부트스트랩할 수 있도록 기본값을 여기서도 제공한다(NestJS 는
@@ -84,6 +88,7 @@ const prismaPortProviders: Provider[] = [
   { provide: TENANT_AGENT_CONFIG_REPO, useClass: PrismaTenantAgentConfigRepository },
   { provide: TENANT_INTENT_REPO, useClass: PrismaTenantIntentRepository },
   { provide: CUSTOM_TOOL_REPO, useClass: PrismaCustomToolRepository },
+  { provide: CALL_SESSION_READ_REPO, useClass: PrismaCallSessionReadRepository },
   // 실HTTP webhook invoker 는 이번 범위 밖 — 인메모리 목을 그대로 사용.
   { provide: WEBHOOK_TOOL_INVOKER, useClass: InMemoryWebhookToolInvoker },
   { provide: TRACE_PORT, useClass: InMemoryTrace },

@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
+
 export function Loading({ label = "불러오는 중…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-brand-500" />
+    <div className="flex items-center gap-2 py-8 text-sm text-ink-500">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-200 border-t-brand-500" />
       {label}
     </div>
   );
@@ -10,16 +12,21 @@ export function Loading({ label = "불러오는 중…" }: { label?: string }) {
 export function ErrorBlock({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error);
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-      데이터를 불러오지 못했습니다: {msg}
+    <div className="rounded-xl border border-danger-600/20 bg-danger-50 p-4 text-sm text-danger-700">
+      데이터를 불러오지 못했어요: {msg}
     </div>
   );
 }
 
-export function EmptyBlock({ label }: { label: string }) {
+/** 빈 상태 — 절제된 꿀벌 모티프 + 1줄 설명(+ 보조 CTA) */
+export function EmptyBlock({ label, children }: { label: string; children?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-400">
-      {label}
+    <div className="rounded-xl border border-dashed border-ink-300 bg-white p-10 text-center">
+      <div className="text-3xl" aria-hidden="true">
+        🐝
+      </div>
+      <p className="mt-3 text-sm text-ink-500">{label}</p>
+      {children ? <div className="mt-4">{children}</div> : null}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   InMemoryTenantIntentRepository,
   InMemoryCustomToolRepository,
   InMemoryWebhookToolInvoker,
+  InMemoryCallSessionReadRepository,
 } from "../adapters/tenant-in-memory.js";
 import { InMemoryTrace, InMemoryKnowledgeRepository } from "../adapters/in-memory.js";
 import { TenantResolverService } from "../tenant-resolver.service.js";
@@ -32,6 +33,21 @@ export function mockPlatformAdminReq(): RequestWithAccount {
   } as unknown as RequestWithAccount;
 }
 
+/**
+ * 특정 테넌트에 스코프된 tenant_admin 목 요청. assertTenantScope 가 자기
+ * tenantId 와 다른 :id 접근을 403(ForbiddenException)으로 차단하는 시나리오
+ * (통화 기록 테넌트 격리 등) 검증에 사용한다.
+ */
+export function mockTenantAdminReq(tenantId: string): RequestWithAccount {
+  return {
+    account: {
+      accountId: `admin_test_${tenantId}` as never,
+      role: "tenant_admin",
+      tenantId,
+    },
+  } as unknown as RequestWithAccount;
+}
+
 export function makeTenantHarness() {
   const tenants = new InMemoryTenantRepository();
   const agentConfigs = new InMemoryTenantAgentConfigRepository();
@@ -40,6 +56,7 @@ export function makeTenantHarness() {
   const webhookInvoker = new InMemoryWebhookToolInvoker();
   const trace = new InMemoryTrace();
   const knowledge = new InMemoryKnowledgeRepository();
+  const callSessions = new InMemoryCallSessionReadRepository();
 
   const resolver = new TenantResolverService({
     tenants,
@@ -61,6 +78,7 @@ export function makeTenantHarness() {
     customTools,
     knowledge,
     resolver,
+    callSessions,
   );
 
   return {
@@ -71,6 +89,7 @@ export function makeTenantHarness() {
     webhookInvoker,
     trace,
     knowledge,
+    callSessions,
     resolver,
     executor,
     controller,

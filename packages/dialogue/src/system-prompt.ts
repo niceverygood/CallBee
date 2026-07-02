@@ -22,10 +22,14 @@
 import {
   INTENTS,
   INTENT_LABELS,
+  type AfterHoursMode,
+  type BusinessHours,
   type Intent,
+  type SmsSettings,
   type TenantAgentConfig,
   type TenantIntentDefinition,
 } from "@colli/contracts";
+import { summarizeBusinessHours } from "./business-hours.js";
 
 /** 프롬프트 빌드 옵션 (모두 선택) */
 export interface SystemPromptOptions {
@@ -197,12 +201,24 @@ function buildEmotionSection(): string {
   ].join("\n");
 }
 
-function buildClosingSection(): string {
-  return [
+/**
+ * "# 마무리" 섹션. 인자 없이 호출하면(BoBi 경로) 기존 출력과 바이트 동일 —
+ * closingText(v3 마무리 멘트)/smsNoticeEnabled(v3 문자 안내)가 있을 때만
+ * 줄이 **추가**된다(골든 패리티).
+ */
+function buildClosingSection(closingText?: string | null, smsNoticeEnabled?: boolean): string {
+  const lines = [
     `# 마무리`,
     `- 처리 결과(티켓 번호·콜백 예약·링크 발송 등)를 간단히 요약해 알립니다.`,
     `- 후속 안내(알림톡)가 발송됨을 알리고 정중히 통화를 마칩니다.`,
-  ].join("\n");
+  ];
+  if (smsNoticeEnabled) {
+    lines.push(`- 처리 후 안내 문자가 발송됨을 알립니다.`);
+  }
+  if (closingText) {
+    lines.push(`- 마무리 인사는 다음 문구를 사용합니다: "${closingText}"`);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -257,6 +273,12 @@ export interface TenantSystemPromptContext {
   consentAlreadyCaptured?: boolean;
   /** 기존 옵션과 동일 의미 — 플랫폼 불변 섹션(GUARDRAIL #4) 트리거. */
   identityVerified?: boolean;
+  /**
+   * 지금이 영업시간 외인지(v3). 판정은 호출자(apps/voice·apps/api) 책임 —
+   * `isWithinBusinessHours(agentConfig.businessHours, now)` 결과를 반전해 넘긴다.
+   * 미지정 시 false. `agentConfig.businessHours` 가 없으면 무시된다(패리티).
+   */
+  isAfterHours?: boolean;
 }
 
 /** 의도 카탈로그를 프롬프트에 넣기 좋은 한 줄 목록으로 렌더 (테넌트 자유 카탈로그). */
@@ -283,7 +305,10 @@ function buildIntentSectionTenant(intents: readonly TenantIntentDefinition[]): s
  * 불변 문구(제목, "반드시 tool 로만" 지시, escalate_to_human/request_callback
  * 안내)는 고정하고, 의도별 라우팅 줄만 카탈로그에서 조립한다.
  */
-function buildToolRulesSectionTenant(intents: readonly TenantIntentDefinition[]): string {
+function buildToolRulesSectionTenant(
+  intents: readonly TenantIntentDefinition[],
+  transferAvailable = false,
+): string {
   const lines = [
     `# 처리 방법 (반드시 tool 로만 상태를 변경)`,
     `상태를 바꾸는 모든 행동은 반드시 제공된 tool 호출로만 합니다. 말로 처리했다고 하지 않습니다.`,
@@ -297,8 +322,94 @@ function buildToolRulesSectionTenant(intents: readonly TenantIntentDefinition[])
     }
   }
   lines.push(`- 범위를 벗어나거나 민감한 사안 → escalate_to_human 으로 사람에게 인계합니다.`);
+  if (transferAvailable) {
+    // v3 호전환(transferPhoneNumber 설정 시). ⚠️ 전화번호 원문은 프롬프트에 넣지
+    // 않는다 — AI 가 번호를 발화하는 사고 방지. 실제 warm transfer 는 apps/voice 가
+    // agentConfig.transferPhoneNumber 로 수행한다.
+    lines.push(
+      `- 사람 연결을 요청받거나 직접 처리가 필요한 사안이면 escalate_to_human 으로 담당자 연결을 시도합니다(담당자 직통 연결 가능).`,
+    );
+  }
   lines.push(`- 즉시 처리 불가하거나 의도 파악 반복 실패 → request_callback 으로 콜백을 예약합니다.`);
   return lines.join("\n");
+}
+
+// ── v3 커스텀 섹션 헬퍼(테넌트 전용 — 값이 없으면 어떤 섹션도 생성하지 않는다) ──
+
+/**
+ * "# 영업시간" 섹션(businessHours 설정 시, 감정 대응 섹션 앞).
+ * 영업시간 문의("몇 시까지 해요?")에 AI 가 정확히 답하는 근거가 된다.
+ */
+function buildBusinessHoursSection(hours: BusinessHours): string {
+  const lines = [`# 영업시간`, `- 영업시간: ${summarizeBusinessHours(hours)}`];
+  if (hours.holidayDates && hours.holidayDates.length > 0) {
+    lines.push(`- 임시 휴무일: ${hours.holidayDates.join(", ")}`);
+  }
+  if (hours.closedOnPublicHolidays) {
+    lines.push(`- 공휴일은 휴무입니다.`);
+  }
+  if (hours.note) {
+    lines.push(`- 안내: ${hours.note}`);
+  }
+  lines.push(`- 영업시간 문의에는 이 정보로 정확히 답합니다.`);
+  return lines.join("\n");
+}
+
+/**
+ * "# 지금은 영업시간 외" 섹션(businessHours && isAfterHours 일 때, 역할 섹션
+ * 다음 최상위 지시). mode=callback 이면 콜백 접수, announce_hours 면 영업시간
+ * 안내 후 정중히 종료. afterHoursText 가 없으면 mode 별 기본 템플릿을 쓴다.
+ */
+function buildAfterHoursSection(agentConfig: TenantAgentConfig, hours: BusinessHours): string {
+  const mode: AfterHoursMode = agentConfig.afterHoursMode ?? "callback";
+  const serviceName = agentConfig.serviceName;
+
+  if (mode === "announce_hours") {
+    const text =
+      agentConfig.afterHoursText ??
+      `지금은 ${serviceName} 영업시간이 아닙니다. 영업시간은 ${summarizeBusinessHours(hours)}입니다. 영업시간에 다시 전화해 주세요.`;
+    return [
+      `# 지금은 영업시간 외 (최우선 지시)`,
+      `현재는 영업시간이 아닙니다. 아래 지시를 다른 어떤 안내보다 우선합니다.`,
+      `- 첫 인사 직후 다음 문구로 영업시간을 안내합니다: "${text}"`,
+      `- 새 접수는 진행하지 않고, 영업시간을 안내한 뒤 정중히 통화를 마칩니다.`,
+    ].join("\n");
+  }
+
+  const text =
+    agentConfig.afterHoursText ??
+    `지금은 ${serviceName} 영업시간이 아닙니다. 성함과 연락처를 남겨주시면 영업시간에 바로 연락드리겠습니다.`;
+  return [
+    `# 지금은 영업시간 외 (최우선 지시)`,
+    `현재는 영업시간이 아닙니다. 아래 지시를 다른 어떤 안내보다 우선합니다.`,
+    `- 첫 인사 직후 다음 문구로 영업시간 외임을 안내합니다: "${text}"`,
+    `- 성함·연락처·용건을 복창 확인한 뒤 request_callback 으로 콜백을 접수합니다.`,
+    `- 콜백 접수를 마치면 정중히 통화를 마칩니다.`,
+  ].join("\n");
+}
+
+/**
+ * "# 긴급 상황 (최우선)" 섹션(emergencyKeywords 설정 시, 톤 섹션 앞).
+ * 감지 즉시 escalate_to_human 인계 — 의도 파악·본인확인 절차 생략(조회성 응대가
+ * 아닌 인계이므로 GUARDRAIL #4 위반이 아니다).
+ */
+function buildEmergencySection(keywords: readonly string[]): string {
+  if (keywords.length === 0) return "";
+  return [
+    `# 긴급 상황 (최우선)`,
+    `고객 발화에 다음 키워드가 포함되면 다른 어떤 절차보다 먼저 escalate_to_human 으로 즉시 사람에게 인계합니다: ${keywords.join(", ")}`,
+    `긴급 상황에서는 의도 파악·본인확인 절차를 생략합니다.`,
+  ].join("\n");
+}
+
+/** smsSettings 에 켜진(enabled) 항목이 하나라도 있는지. */
+function hasEnabledSmsNotice(smsSettings: SmsSettings | null | undefined): boolean {
+  if (!smsSettings) return false;
+  return (
+    smsSettings.confirmationEnabled ||
+    smsSettings.callbackNoticeEnabled ||
+    smsSettings.missedCallEnabled
+  );
 }
 
 /**
@@ -309,17 +420,34 @@ function buildToolRulesSectionTenant(intents: readonly TenantIntentDefinition[])
  * GUARDRAIL #1(결제정보)/#3(고지·동의) 섹션은 agentConfig 를 인자로 받지 않는
  * 공유 헬퍼(buildPaymentGuardSection/buildConsentSection)를 그대로 재사용하므로
  * 테넌트가 구조화 필드로도 우회할 수 없다.
+ *
+ * v3 커스텀 필드(closingText/businessHours/afterHoursMode/afterHoursText/
+ * transferPhoneNumber/emergencyKeywords/smsSettings)는 **값이 있을 때만** 섹션/
+ * 줄을 추가한다 — 전부 미설정이면 출력은 v2 와 바이트 동일(골든 패리티,
+ * system-prompt.custom-fields.test.ts 가 검증).
  */
 export function buildTenantSystemPrompt(ctx: TenantSystemPromptContext): string {
   const { agentConfig, intents } = ctx;
   const consentDone = ctx.consentAlreadyCaptured ?? false;
   const identityVerified = ctx.identityVerified ?? false;
+  const isAfterHours = ctx.isAfterHours ?? false;
+  const businessHours = agentConfig.businessHours ?? null;
 
   const sections: string[] = [];
 
   sections.push(
     buildRoleSection(agentConfig.serviceName, agentConfig.agentName, agentConfig.personaInstructions ?? undefined),
   );
+
+  // v3: 영업시간 외 최상위 지시(역할 섹션 다음). businessHours 없으면 isAfterHours 무시.
+  if (businessHours && isAfterHours) {
+    sections.push(buildAfterHoursSection(agentConfig, businessHours));
+  }
+
+  // v3: 긴급 키워드(톤 섹션 앞).
+  const emergencySection = buildEmergencySection(agentConfig.emergencyKeywords ?? []);
+  if (emergencySection) sections.push(emergencySection);
+
   sections.push(buildToneSection(agentConfig.toneExtra));
   sections.push(
     buildGreetingSection(agentConfig.serviceName, agentConfig.agentName, agentConfig.greetingText),
@@ -330,14 +458,21 @@ export function buildTenantSystemPrompt(ctx: TenantSystemPromptContext): string 
 
   sections.push(buildIdentitySection(identityVerified));
   sections.push(buildIntentSectionTenant(intents));
-  sections.push(buildToolRulesSectionTenant(intents));
+  sections.push(buildToolRulesSectionTenant(intents, Boolean(agentConfig.transferPhoneNumber)));
   sections.push(buildPaymentGuardSection());
 
   const domainSection = buildDomainConstraintsSection(agentConfig.domainConstraints);
   if (domainSection) sections.push(domainSection);
 
+  // v3: 영업시간 정보 섹션(감정 대응 섹션 앞).
+  if (businessHours) {
+    sections.push(buildBusinessHoursSection(businessHours));
+  }
+
   sections.push(buildEmotionSection());
-  sections.push(buildClosingSection());
+  sections.push(
+    buildClosingSection(agentConfig.closingText, hasEnabledSmsNotice(agentConfig.smsSettings)),
+  );
 
   return sections.join("\n\n");
 }

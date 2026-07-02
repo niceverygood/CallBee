@@ -18,6 +18,10 @@ import type {
   CustomToolDefinition,
   TenantToolId,
   JsonSchemaObject,
+  CallDirection,
+  Emotion,
+  CallOutcome,
+  SpeakerRole,
 } from "@colli/contracts";
 
 // ── 테넌트 저장소 ───────────────────────────────────────────────
@@ -29,6 +33,11 @@ export interface CreateTenantInput {
   status?: TenantStatus;
   plan?: TenantPlan;
   ownerEmail?: string | null;
+  // ── v3 셀프 가입 필드(전부 optional — 기존 호출부 무수정 동작) ──
+  industryKey?: string | null;
+  contactPhone?: string | null;
+  /** ISO8601 문자열(계약 컨벤션). 어댑터가 Date 로 변환해 저장한다. */
+  appliedAt?: string | null;
 }
 
 export interface UpdateTenantInput {
@@ -38,6 +47,13 @@ export interface UpdateTenantInput {
   status?: TenantStatus;
   plan?: TenantPlan;
   ownerEmail?: string | null;
+  // ── v3 승인/반려 플로우 필드 ──
+  industryKey?: string | null;
+  contactPhone?: string | null;
+  appliedAt?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
 }
 
 /**
@@ -153,6 +169,71 @@ export interface CustomToolRepository {
     tenantId: TenantId,
     toolId: TenantToolId,
   ): Promise<string | null>;
+}
+
+// ── 테넌트 통화 기록 읽기 저장소 (콘솔 "통화 기록" 화면 전용) ─────
+/**
+ * apps/admin 의 CallListItem/CallDetail 뷰모델 shape 를 테넌트 스코프로
+ * 재사용한다(product-spec §4.9). 차이점: intent 는 테넌트 자유 의도 key 라
+ * string|null (BoBi 고정 Intent 유니온이 아님), subscriberName 은 구독자
+ * 프로필 연동이 없는 일반 테넌트에서는 항상 null.
+ * 전사(text)는 저장 시점에 이미 PII 마스킹된 텍스트다(Transcript 모델 주석).
+ */
+export interface TenantCallListItem {
+  id: string;
+  clawOpsCallId: string;
+  /** 발신번호(E.164) */
+  from: string;
+  /** 수신번호(070) */
+  to: string;
+  direction: CallDirection;
+  /** 테넌트 의도 key(자유 문자열) */
+  intent: string | null;
+  emotion: Emotion | null;
+  outcome: CallOutcome | null;
+  subscriberId: string | null;
+  subscriberName: string | null;
+  /** ISO8601 */
+  startedAt: string;
+  durationSec: number;
+}
+
+export interface TenantCallTranscriptSegment {
+  role: SpeakerRole;
+  /** PII 마스킹된 텍스트 */
+  text: string;
+  /** 통화 시작 기준 오프셋(초) */
+  atSec: number;
+}
+
+export interface TenantCallDetail extends TenantCallListItem {
+  recordingUrl: string | null;
+  summary: string | null;
+  transcript: TenantCallTranscriptSegment[];
+  /** 이 통화에서 호출된 tool 이름 순서(trace 요약) */
+  toolInvocations: string[];
+}
+
+export interface ListTenantCallsOptions {
+  /** 기본 50, 최대 100 (컨트롤러가 클램프) */
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * CallSession 읽기 전용 포트 — 항상 tenantId 스코프로만 조회한다(격리 강제).
+ * 정렬은 startedAt desc(최신순) 고정.
+ */
+export interface CallSessionReadRepository {
+  listByTenant(
+    tenantId: TenantId,
+    options?: ListTenantCallsOptions,
+  ): Promise<TenantCallListItem[]>;
+  /** 해당 테넌트 소유가 아니면(타 테넌트 통화) null. */
+  findByIdForTenant(
+    tenantId: TenantId,
+    callId: string,
+  ): Promise<TenantCallDetail | null>;
 }
 
 // ── webhook tool 실행기 ─────────────────────────────────────────

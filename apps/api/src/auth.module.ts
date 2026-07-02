@@ -10,6 +10,7 @@
  */
 import { Module, type Provider } from "@nestjs/common";
 import { AuthController } from "./auth.controller.js";
+import { SignupController } from "./signup.controller.js";
 import { TenantModule } from "./tenant.module.js";
 import { ADMIN_ACCOUNT_REPO } from "./tokens.js";
 import {
@@ -30,7 +31,10 @@ const defaultPortProviders: Provider[] =
 
 @Module({
   imports: [TenantModule],
-  controllers: [AuthController],
+  // SignupController: POST /signup(공개, 무인증 — product-spec §2). TENANT_REPO/
+  // TENANT_AGENT_CONFIG_REPO 는 TenantModule exports, ADMIN_ACCOUNT_REPO 는 이
+  // 모듈 providers 에서 주입된다.
+  controllers: [AuthController, SignupController],
   providers: [...defaultPortProviders],
 })
 export class AuthModule {}

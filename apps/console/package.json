@@ -2,7 +2,7 @@
   "name": "@colli/console",
   "version": "0.1.0",
   "private": true,
-  "description": "테넌트 셀프서비스 콘솔: 온보딩 + 에이전트 스튜디오(의도/tool/KB) (Worker console, React+Vite+Tailwind)",
+  "description": "콜비(Callbee) 사업장 콘솔: 랜딩 + 가입 위저드 + 대시보드/통화 기록/에이전트 스튜디오/운영 설정 (Worker console, React+Vite+Tailwind)",
   "type": "module",
   "scripts": {
     "dev": "vite",

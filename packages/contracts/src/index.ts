@@ -16,5 +16,11 @@ export * from "./auth.js";
  * minor 만 올린다.
  * 0.3.0: 관리자 계정·인증 계약(auth.ts 신규 — AdminAccount, 로그인, 테넌트+계정
  * 동시 생성). 기존 export 는 전부 유지되는 non-breaking 추가.
+ * 0.4.0: 셀프 가입+승인 플로우(SignupRequest/SignupResult/Approve·Reject,
+ * TenantStatus 에 pending_approval/rejected 추가, INDUSTRY_PRESETS/
+ * TENANT_PLAN_METAS 표시 메타) + 사업장 커스텀 확장(BusinessHours/AfterHoursMode/
+ * SmsSettings, TenantAgentConfig optional 필드 7종). 기존 export 는 전부 유지 —
+ * 단, TenantStatus 유니온이 넓어져 Record<TenantStatus,...> 소비처는 키 2개를
+ * 추가해야 한다(apps/admin 라벨 맵 — admin 워커 브리핑에 명시).
  */
-export const CONTRACTS_VERSION = "0.3.0" as const;
+export const CONTRACTS_VERSION = "0.4.0" as const;

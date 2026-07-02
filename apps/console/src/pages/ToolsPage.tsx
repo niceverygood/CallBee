@@ -7,6 +7,8 @@ import type { CustomToolDraft } from "../api/types";
 import { FormField, inputCls, textareaCls } from "../components/FormField";
 import { Loading, ErrorBlock, EmptyBlock } from "../components/StateBlock";
 import { Badge } from "../components/Badge";
+import { PageHeader } from "../components/PageHeader";
+import { btnPrimary, btnSecondary, btnSmall, btnSmallDanger } from "../components/ui";
 
 const DEFAULT_SCHEMA: JsonSchemaObject = {
   type: "object",
@@ -28,11 +30,10 @@ const isSystemToolName = (name: string): boolean =>
   (SYSTEM_TOOL_NAMES as readonly string[]).includes(name);
 
 /**
- * (c) 커스텀 Tool 탭 — TenantTool CRUD 폼(name/description/webhookUrl/
- * webhookSecret/timeoutMs/enabled). paramsSchema 는 v1 최소 기능으로 raw JSON
- * textarea 하나만 제공한다(유효한 JSON Schema object 형태로 apps/api 전송).
- * name 이 SYSTEM_TOOL_NAMES 와 겹치면 프론트에서 즉시 경고 표시(UX 방어,
- * 서버 검증은 apps/api 몫).
+ * 에이전트 스튜디오 > 연동 — 우리 예약 시스템, 재고 조회처럼 외부 시스템 기능을
+ * webhook 하나로 AI 상담원에게 연결한다(내부 계약은 커스텀 tool — 사용자 노출
+ * 용어는 brand-guide §5 에 따라 "연동"). paramsSchema 는 v1 최소 기능으로
+ * raw JSON textarea 하나만 제공한다.
  */
 export function ToolsPage() {
   const tenantId = useTenantId();
@@ -79,13 +80,13 @@ export function ToolsPage() {
         parsed === null ||
         (parsed as { type?: string }).type !== "object"
       ) {
-        setSchemaError('JSON Schema 는 { "type": "object", ... } 형태여야 합니다.');
+        setSchemaError('JSON Schema 는 { "type": "object", ... } 형태여야 해요.');
         return;
       }
       setSchemaError(null);
       setDraft((d) => ({ ...d, paramsSchema: parsed as JsonSchemaObject }));
     } catch {
-      setSchemaError("유효한 JSON 이 아닙니다.");
+      setSchemaError("유효한 JSON 이 아니에요.");
     }
   };
 
@@ -104,37 +105,40 @@ export function ToolsPage() {
   if (error) return <ErrorBlock error={error} />;
 
   return (
-    <div>
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={startNew}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          + Tool 추가
-        </button>
-      </div>
+    <div className="mx-auto max-w-5xl">
+      <PageHeader
+        title="연동"
+        subtitle="예약 확인, 재고 조회 같은 우리 시스템 기능을 webhook 으로 연결해요."
+        actions={
+          <button onClick={startNew} className={btnPrimary}>
+            + 연동 추가
+          </button>
+        }
+      />
 
       {editingId ? (
-        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            {editingId === "__new__" ? "새 커스텀 Tool" : "Tool 편집"}
+        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-5">
+          <h2 className="mb-4 text-base font-semibold text-ink-800">
+            {editingId === "__new__" ? "새 연동" : "연동 편집"}
           </h2>
-          <div className="grid gap-3">
-            <FormField label="name" hint="LLM function name. SYSTEM_TOOL_NAMES 와 충돌 불가.">
+          <div className="grid gap-4">
+            <FormField
+              label="이름"
+              hint="영문 소문자·언더스코어. 기본 동작과 같은 이름은 쓸 수 없어요."
+              error={
+                nameConflict
+                  ? "이 이름은 콜비 기본 동작과 겹쳐요. 다른 이름을 사용해 주세요."
+                  : null
+              }
+            >
               <input
                 className={inputCls}
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 placeholder="예: check_reservation"
               />
-              {nameConflict ? (
-                <p className="mt-1 text-xs font-medium text-red-600">
-                  이 이름은 플랫폼 시스템 tool({SYSTEM_TOOL_NAMES.join(", ")})과 겹칩니다.
-                  다른 이름을 사용하세요.
-                </p>
-              ) : null}
             </FormField>
-            <FormField label="description">
+            <FormField label="설명" hint="AI 가 언제 이 연동을 쓸지 판단하는 기준이 돼요.">
               <textarea
                 rows={2}
                 className={textareaCls}
@@ -143,8 +147,9 @@ export function ToolsPage() {
               />
             </FormField>
             <FormField
-              label="paramsSchema (raw JSON)"
+              label="파라미터 스키마 (JSON)"
               hint='유효한 JSON Schema object 형태(예: {"type":"object","properties":{...},"additionalProperties":false})'
+              error={schemaError}
             >
               <textarea
                 rows={6}
@@ -152,12 +157,9 @@ export function ToolsPage() {
                 value={schemaText}
                 onChange={(e) => onSchemaChange(e.target.value)}
               />
-              {schemaError ? (
-                <p className="mt-1 text-xs font-medium text-red-600">{schemaError}</p>
-              ) : null}
             </FormField>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="webhookUrl">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Webhook 주소">
                 <input
                   className={inputCls}
                   value={draft.webhookUrl}
@@ -165,7 +167,7 @@ export function ToolsPage() {
                   placeholder="https://example.com/webhooks/..."
                 />
               </FormField>
-              <FormField label="webhookSecret" hint="선택. HMAC 서명용">
+              <FormField label="서명 시크릿" hint="선택. 요청 위조 방지용 HMAC 서명에 써요.">
                 <input
                   className={inputCls}
                   type="password"
@@ -173,7 +175,7 @@ export function ToolsPage() {
                   onChange={(e) => setDraft({ ...draft, webhookSecret: e.target.value })}
                 />
               </FormField>
-              <FormField label="timeoutMs">
+              <FormField label="타임아웃(ms)">
                 <input
                   type="number"
                   className={inputCls}
@@ -183,19 +185,23 @@ export function ToolsPage() {
                   }
                 />
               </FormField>
-              <FormField label="enabled">
-                <label className="flex items-center gap-2 text-sm text-slate-600">
+              <FormField label="사용 여부">
+                <label className="flex items-center gap-2 py-2.5 text-sm text-ink-700">
                   <input
                     type="checkbox"
+                    className="h-4 w-4 accent-brand-500"
                     checked={draft.enabled}
                     onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
                   />
-                  활성화
+                  사용해요
                 </label>
               </FormField>
             </div>
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={cancel} className={btnSecondary}>
+              취소
+            </button>
             <button
               onClick={save}
               disabled={
@@ -206,55 +212,52 @@ export function ToolsPage() {
                 !draft.name.trim() ||
                 !draft.webhookUrl.trim()
               }
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              className={btnPrimary}
             >
               저장
-            </button>
-            <button
-              onClick={cancel}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-            >
-              취소
             </button>
           </div>
         </div>
       ) : null}
 
-      {data && data.length === 0 ? (
-        <EmptyBlock label="등록된 커스텀 tool 이 없습니다." />
+      {data && data.length === 0 && !editingId ? (
+        <EmptyBlock label="아직 등록한 연동이 없어요. 우리 예약 시스템을 연결해 보세요." />
       ) : null}
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {(data ?? []).map((tool) => (
           <article
             key={String(tool.toolId)}
-            className="rounded-xl border border-slate-200 bg-white p-4"
+            className="rounded-xl border border-ink-200 bg-white p-5 shadow-sm"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-mono text-sm font-semibold text-slate-800">
+                <h3 className="font-mono text-sm font-semibold text-ink-900">
                   {tool.name}
                 </h3>
-                <p className="mt-1 text-sm text-slate-600">{tool.description}</p>
-                <p className="mt-1 text-xs text-slate-400">{tool.webhookUrl}</p>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <Badge tone={tool.enabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}>
-                    {tool.enabled ? "활성" : "비활성"}
+                <p className="mt-1 text-sm text-ink-600">{tool.description}</p>
+                <p className="mt-1 break-all text-xs text-ink-400">{tool.webhookUrl}</p>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  <Badge
+                    tone={
+                      tool.enabled
+                        ? "bg-success-50 text-success-700"
+                        : "bg-ink-100 text-ink-600"
+                    }
+                  >
+                    {tool.enabled ? "사용 중" : "꺼짐"}
                   </Badge>
-                  <Badge>timeout {tool.timeoutMs}ms</Badge>
-                  {tool.hasWebhookSecret ? <Badge>secret 설정됨</Badge> : null}
+                  <Badge>타임아웃 {tool.timeoutMs}ms</Badge>
+                  {tool.hasWebhookSecret ? <Badge>서명 사용</Badge> : null}
                 </div>
               </div>
               <div className="flex shrink-0 gap-2">
-                <button
-                  onClick={() => startEdit(tool)}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                >
+                <button onClick={() => startEdit(tool)} className={btnSmall}>
                   편집
                 </button>
                 <button
                   onClick={() => remove.mutate(String(tool.toolId))}
-                  className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                  className={btnSmallDanger}
                 >
                   삭제
                 </button>

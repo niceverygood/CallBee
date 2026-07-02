@@ -10,14 +10,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-end justify-between">
+    <div className="mb-6 flex items-end justify-between gap-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-        {subtitle ? (
-          <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>
-        ) : null}
+        <h1 className="text-[28px] font-bold leading-snug text-ink-900">{title}</h1>
+        {subtitle ? <p className="mt-1 text-sm text-ink-500">{subtitle}</p> : null}
       </div>
-      {actions ? <div className="flex gap-2">{actions}</div> : null}
+      {actions ? <div className="flex shrink-0 gap-2">{actions}</div> : null}
     </div>
   );
 }

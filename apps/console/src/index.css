@@ -4,8 +4,16 @@
 
 :root {
   color-scheme: light;
+  font-family:
+    "Pretendard Variable",
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Apple SD Gothic Neo",
+    "Segoe UI",
+    sans-serif;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-ink-50 text-ink-900 antialiased;
 }

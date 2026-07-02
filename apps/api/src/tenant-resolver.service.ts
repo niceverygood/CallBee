@@ -75,12 +75,20 @@ function toCustomToolJsonSchema(t: {
 export class TenantResolverService {
   constructor(private readonly deps: TenantResolverDeps) {}
 
-  /** 070 번호(E.164) → 조립된 테넌트 에이전트 컨텍스트. 미매칭이면 null. */
+  /**
+   * 070 번호(E.164) → 조립된 테넌트 에이전트 컨텍스트. 미매칭이면 null.
+   *
+   * status === "active" 테넌트만 매칭한다(product-spec §3.3 방어 조건):
+   * pending_approval 의 "pending-{slug}" 플레이스홀더는 어차피 실수신 번호와
+   * 충돌하지 않지만, suspended(수신 거부)/rejected 테넌트가 실번호를 보유한
+   * 채로 통화를 받는 일이 없도록 여기서 차단한다.
+   */
   async resolveByPhoneNumber(
     toNumber: string,
   ): Promise<ResolvedTenantAgentContext | null> {
     const tenant = await this.deps.tenants.findByPhoneNumber(toNumber);
     if (!tenant) return null;
+    if (tenant.status !== "active") return null;
     return this.resolveByTenantId(tenant.tenantId);
   }
 

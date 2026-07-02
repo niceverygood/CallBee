@@ -12,7 +12,13 @@
  * 발급/검증)은 apps/api 가 구현한다.
  */
 import type { Brand } from "./domain.js";
-import type { TenantId } from "./tenant.js";
+import type {
+  IndustryPresetKey,
+  TenantId,
+  TenantPlan,
+  TenantStatus,
+  TenantSummary,
+} from "./tenant.js";
 
 export type AdminAccountId = Brand<string, "AdminAccountId">;
 
@@ -59,4 +65,69 @@ export interface CreateTenantAccountRequest {
 export interface CreateTenantAccountResult {
   tenantId: TenantId;
   account: AdminAccountSummary;
+}
+
+// ── v3: 셀프 가입(공개) + 승인/반려 플로우 ───────────────────────
+/**
+ * 가입 위저드 3단계를 한 번에 제출하는 공개(무인증) 요청 — POST /signup.
+ * ① 계정(email/password) ② 사업장 정보(businessName/industryKey/contactPhone)
+ * ③ 요금제(plan). 성공 시 계정 + 테넌트(status=pending_approval)가 하나의
+ * 트랜잭션으로 함께 생성되고, 즉시 로그인 토큰이 발급된다(승인 대기 화면 진입용).
+ *
+ * 검증 규칙(apps/api 구현 책임):
+ * - email: 형식 검증 + AdminAccount 중복 시 email_already_exists.
+ * - password: 8자 이상(공백 금지).
+ * - businessName: 1~60자.
+ * - industryKey: INDUSTRY_PRESETS 의 key 중 하나. "other" 면 industryCustomLabel 필수.
+ * - contactPhone: 숫자/하이픈만, 9~13자리.
+ * - plan: TENANT_PLANS 중 하나. 결제 연동 없음 — 선택값 저장+표시만.
+ * - 070 번호는 받지 않는다 — 승인 시 관리자가 배정(makePendingPhoneNumber 참조).
+ */
+export interface SignupRequest {
+  email: string;
+  password: string;
+  /** 사업장(업체) 표시명 */
+  businessName: string;
+  /** 업종 프리셋 key(INDUSTRY_PRESETS) */
+  industryKey: IndustryPresetKey | string;
+  /** industryKey === "other" 일 때 직접 입력한 업종명(필수) */
+  industryCustomLabel?: string;
+  /** 사업장 연락처(승인 심사·연락용, 070 아님) */
+  contactPhone: string;
+  /** 선택한 요금제(표시/저장 전용 — 결제 연동 없음) */
+  plan: TenantPlan;
+}
+
+export interface SignupResult {
+  tenantId: TenantId;
+  account: AdminAccountSummary;
+  /** 신청 직후 테넌트 상태 — 항상 "pending_approval" */
+  tenantStatus: TenantStatus;
+  /** 가입 즉시 발급되는 세션 토큰(콘솔이 바로 로그인 상태로 승인 대기 화면 표시) */
+  token: string;
+}
+
+/**
+ * 총괄관리자 승인 — POST /admin/tenants/:id/approve (platform_admin 전용).
+ * 070 번호 배정이 승인의 필수 입력이다(현실 플로우: 번호는 관리자가 배정).
+ * 성공 시 status=active, phoneNumber=배정번호, approvedAt=now.
+ */
+export interface ApproveTenantRequest {
+  /** 배정할 070 번호(E.164/숫자열). unique 충돌 시 phone_number_taken 에러 */
+  phoneNumber: string;
+}
+
+/**
+ * 총괄관리자 반려 — POST /admin/tenants/:id/reject (platform_admin 전용).
+ * 성공 시 status=rejected, rejectionReason/rejectedAt 기록. 사유는 콘솔의
+ * 승인 대기(반려) 화면에 그대로 노출되므로 사용자에게 보여줄 문장으로 쓴다.
+ */
+export interface RejectTenantRequest {
+  /** 반려 사유(필수, 1~500자) */
+  reason: string;
+}
+
+/** 승인/반려 공통 응답 — 갱신된 테넌트 요약. */
+export interface TenantReviewResult {
+  tenant: TenantSummary;
 }

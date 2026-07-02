@@ -25,6 +25,10 @@ import type {
   WebhookToolInvoker,
   WebhookInvokeRequest,
   WebhookInvokeResponse,
+  CallSessionReadRepository,
+  TenantCallListItem,
+  TenantCallDetail,
+  ListTenantCallsOptions,
 } from "../tenant.ports.js";
 import type { TenantAgentConfig as TenantAgentConfigContract } from "@colli/contracts";
 
@@ -66,6 +70,12 @@ export class InMemoryTenantRepository implements TenantRepository {
       phoneNumber: input.phoneNumber,
       status: input.status ?? "onboarding",
       plan: input.plan ?? "trial",
+      industryKey: input.industryKey ?? null,
+      contactPhone: input.contactPhone ?? null,
+      appliedAt: input.appliedAt ?? null,
+      approvedAt: null,
+      rejectedAt: null,
+      rejectionReason: null,
     };
     this.byId.set(tenant.tenantId, tenant);
     return { ...tenant };
@@ -103,6 +113,16 @@ export class InMemoryTenantRepository implements TenantRepository {
       phoneNumber: patch.phoneNumber ?? cur.phoneNumber,
       status: patch.status ?? cur.status,
       plan: patch.plan ?? cur.plan,
+      industryKey: patch.industryKey !== undefined ? patch.industryKey : cur.industryKey,
+      contactPhone:
+        patch.contactPhone !== undefined ? patch.contactPhone : cur.contactPhone,
+      appliedAt: patch.appliedAt !== undefined ? patch.appliedAt : cur.appliedAt,
+      approvedAt: patch.approvedAt !== undefined ? patch.approvedAt : cur.approvedAt,
+      rejectedAt: patch.rejectedAt !== undefined ? patch.rejectedAt : cur.rejectedAt,
+      rejectionReason:
+        patch.rejectionReason !== undefined
+          ? patch.rejectionReason
+          : cur.rejectionReason,
     };
     this.byId.set(tenantId, updated);
     return { ...updated };
@@ -308,6 +328,56 @@ export class InMemoryCustomToolRepository implements CustomToolRepository {
     const cur = this.store.get(toolId);
     if (!cur || cur.tenantId !== tenantId) return null;
     return this.secrets.get(toolId) ?? null;
+  }
+}
+
+// ── 테넌트 통화 기록 읽기 인메모리 ──────────────────────────────
+/**
+ * CallSessionReadRepository 인메모리 구현(테스트/데모용).
+ * 테스트가 `seed(tenantId, detail)` 로 통화 기록을 심은 뒤 목록/상세를 검증한다.
+ * 목록은 startedAt desc(최신순) 고정 정렬, limit 기본 50.
+ */
+export class InMemoryCallSessionReadRepository implements CallSessionReadRepository {
+  private byTenant = new Map<string, TenantCallDetail[]>();
+  private nextId = idGen("call");
+
+  /** 테스트/데모용 시드. id 를 생략하면 자동 발급한다. */
+  seed(
+    tenantId: TenantId,
+    call: Omit<TenantCallDetail, "id"> & { id?: string },
+  ): TenantCallDetail {
+    const detail: TenantCallDetail = {
+      ...call,
+      id: call.id ?? this.nextId(),
+    };
+    const list = this.byTenant.get(tenantId) ?? [];
+    list.push(detail);
+    this.byTenant.set(tenantId, list);
+    return { ...detail };
+  }
+
+  async listByTenant(
+    tenantId: TenantId,
+    options?: ListTenantCallsOptions,
+  ): Promise<TenantCallListItem[]> {
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    const list = this.byTenant.get(tenantId) ?? [];
+    return [...list]
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .slice(offset, offset + limit)
+      .map(({ recordingUrl, summary, transcript, toolInvocations, ...item }) => ({
+        ...item,
+      }));
+  }
+
+  async findByIdForTenant(
+    tenantId: TenantId,
+    callId: string,
+  ): Promise<TenantCallDetail | null> {
+    const list = this.byTenant.get(tenantId) ?? [];
+    const found = list.find((c) => c.id === callId);
+    return found ? { ...found, transcript: [...found.transcript] } : null;
   }
 }
 

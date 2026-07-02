@@ -19,3 +19,6 @@ export const WEBHOOK_TOOL_INVOKER = Symbol("WebhookToolInvoker");
 
 // ── v3(로그인 계정) 신규 포트 토큰 ───────────────────────────────
 export const ADMIN_ACCOUNT_REPO = Symbol("AdminAccountRepository");
+
+// ── v3(테넌트 통화 기록 열람) 신규 포트 토큰 ─────────────────────
+export const CALL_SESSION_READ_REPO = Symbol("CallSessionReadRepository");

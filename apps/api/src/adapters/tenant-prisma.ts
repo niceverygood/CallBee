@@ -11,7 +11,7 @@
  * services/compliance 의 암호화 유틸로 감싼 뒤 저장해야 한다(docs 상 명시된
  * 운영 시 요구사항 — 이번 범위에서는 평문 그대로 두되 주석으로 남긴다).
  */
-import { prisma } from "@colli/db";
+import { prisma, Prisma } from "@colli/db";
 import type {
   TenantId,
   TenantSummary,
@@ -23,6 +23,13 @@ import type {
   CustomToolDefinition,
   TenantToolId,
   JsonSchemaObject,
+  BusinessHours,
+  AfterHoursMode,
+  SmsSettings,
+  CallDirection,
+  Emotion,
+  CallOutcome,
+  SpeakerRole,
 } from "@colli/contracts";
 import type {
   TenantRepository,
@@ -36,6 +43,10 @@ import type {
   CustomToolRepository,
   CreateCustomToolInput,
   UpdateCustomToolInput,
+  CallSessionReadRepository,
+  ListTenantCallsOptions,
+  TenantCallListItem,
+  TenantCallDetail,
 } from "../tenant.ports.js";
 
 type Db = typeof prisma;
@@ -48,6 +59,12 @@ function toTenantSummary(rec: {
   phoneNumber: string;
   status: string;
   plan: string;
+  industryKey: string | null;
+  contactPhone: string | null;
+  appliedAt: Date | null;
+  approvedAt: Date | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
 }): TenantSummary {
   return {
     tenantId: rec.id as TenantId,
@@ -57,7 +74,21 @@ function toTenantSummary(rec: {
     phoneNumber: rec.phoneNumber,
     status: rec.status as TenantStatus,
     plan: rec.plan as TenantPlan,
+    industryKey: rec.industryKey,
+    contactPhone: rec.contactPhone,
+    appliedAt: rec.appliedAt ? rec.appliedAt.toISOString() : null,
+    approvedAt: rec.approvedAt ? rec.approvedAt.toISOString() : null,
+    rejectedAt: rec.rejectedAt ? rec.rejectedAt.toISOString() : null,
+    rejectionReason: rec.rejectionReason,
   };
+}
+
+/** ISO8601 문자열(계약 컨벤션) ↔ Prisma DateTime 변환. undefined 는 그대로 통과(부분 patch). */
+function toDateOrPassthrough(
+  value: string | null | undefined,
+): Date | null | undefined {
+  if (value === undefined) return undefined;
+  return value === null ? null : new Date(value);
 }
 
 // ── 테넌트 ──────────────────────────────────────────────────────
@@ -74,6 +105,9 @@ export class PrismaTenantRepository implements TenantRepository {
         status: input.status,
         plan: input.plan,
         ownerEmail: input.ownerEmail ?? null,
+        industryKey: input.industryKey ?? null,
+        contactPhone: input.contactPhone ?? null,
+        appliedAt: input.appliedAt ? new Date(input.appliedAt) : null,
       },
     });
     return toTenantSummary(rec);
@@ -100,7 +134,20 @@ export class PrismaTenantRepository implements TenantRepository {
   ): Promise<TenantSummary | null> {
     const rec = await this.db.tenant.update({
       where: { id: tenantId },
-      data: patch,
+      data: {
+        name: patch.name,
+        industryLabel: patch.industryLabel,
+        phoneNumber: patch.phoneNumber,
+        status: patch.status,
+        plan: patch.plan,
+        ownerEmail: patch.ownerEmail,
+        industryKey: patch.industryKey,
+        contactPhone: patch.contactPhone,
+        appliedAt: toDateOrPassthrough(patch.appliedAt),
+        approvedAt: toDateOrPassthrough(patch.approvedAt),
+        rejectedAt: toDateOrPassthrough(patch.rejectedAt),
+        rejectionReason: patch.rejectionReason,
+      },
     });
     return rec ? toTenantSummary(rec) : null;
   }
@@ -128,13 +175,70 @@ export class PrismaTenantAgentConfigRepository
     tenantId: TenantId,
     input: UpsertTenantAgentConfigInput,
   ): Promise<TenantAgentConfigContract> {
+    const data = agentConfigDataFromInput(input);
     const rec = await this.db.tenantAgentConfig.upsert({
       where: { tenantId },
-      update: input,
-      create: { tenantId, ...input },
+      update: data,
+      create: { tenantId, ...data },
     });
     return toAgentConfig(tenantId, rec);
   }
+}
+
+/**
+ * 계약 input → Prisma 데이터 매핑. v3 신규 optional 필드는 undefined 면
+ * 아예 넘기지 않아(부분 미지정) 기존 값/DB 기본값이 유지된다.
+ * Json 컬럼(businessHours/smsSettings)의 null 은 Prisma.DbNull 로 변환해야
+ * 한다(Prisma 는 nullable Json 에 JS null 을 그대로 받지 않음).
+ */
+function agentConfigDataFromInput(input: UpsertTenantAgentConfigInput): {
+  serviceName: string;
+  agentName: string;
+  greetingText: string | null;
+  personaInstructions: string | null;
+  toneExtra: string[];
+  domainConstraints: string[];
+  intentUnresolvedFallbackTool: string;
+  maxIntentAttempts: number;
+  closingText?: string | null;
+  businessHours?: Prisma.InputJsonValue | typeof Prisma.DbNull;
+  afterHoursMode?: string;
+  afterHoursText?: string | null;
+  transferPhoneNumber?: string | null;
+  emergencyKeywords?: string[];
+  smsSettings?: Prisma.InputJsonValue | typeof Prisma.DbNull;
+} {
+  return {
+    serviceName: input.serviceName,
+    agentName: input.agentName,
+    greetingText: input.greetingText,
+    personaInstructions: input.personaInstructions,
+    toneExtra: input.toneExtra,
+    domainConstraints: input.domainConstraints,
+    intentUnresolvedFallbackTool: input.intentUnresolvedFallbackTool,
+    maxIntentAttempts: input.maxIntentAttempts,
+    ...(input.closingText !== undefined && { closingText: input.closingText }),
+    ...(input.businessHours !== undefined && {
+      businessHours:
+        input.businessHours === null
+          ? Prisma.DbNull
+          : (input.businessHours as unknown as Prisma.InputJsonValue),
+    }),
+    ...(input.afterHoursMode !== undefined && { afterHoursMode: input.afterHoursMode }),
+    ...(input.afterHoursText !== undefined && { afterHoursText: input.afterHoursText }),
+    ...(input.transferPhoneNumber !== undefined && {
+      transferPhoneNumber: input.transferPhoneNumber,
+    }),
+    ...(input.emergencyKeywords !== undefined && {
+      emergencyKeywords: input.emergencyKeywords,
+    }),
+    ...(input.smsSettings !== undefined && {
+      smsSettings:
+        input.smsSettings === null
+          ? Prisma.DbNull
+          : (input.smsSettings as unknown as Prisma.InputJsonValue),
+    }),
+  };
 }
 
 function toAgentConfig(
@@ -148,6 +252,13 @@ function toAgentConfig(
     domainConstraints: string[];
     intentUnresolvedFallbackTool: string;
     maxIntentAttempts: number;
+    closingText: string | null;
+    businessHours: unknown;
+    afterHoursMode: string;
+    afterHoursText: string | null;
+    transferPhoneNumber: string | null;
+    emergencyKeywords: string[];
+    smsSettings: unknown;
   },
 ): TenantAgentConfigContract {
   return {
@@ -160,6 +271,14 @@ function toAgentConfig(
     domainConstraints: rec.domainConstraints,
     intentUnresolvedFallbackTool: rec.intentUnresolvedFallbackTool,
     maxIntentAttempts: rec.maxIntentAttempts,
+    // ── v3 커스텀 확장(값이 없으면 null/기본값 — 골든 패리티는 dialogue 쪽 책임) ──
+    closingText: rec.closingText,
+    businessHours: (rec.businessHours as BusinessHours | null) ?? null,
+    afterHoursMode: rec.afterHoursMode as AfterHoursMode,
+    afterHoursText: rec.afterHoursText,
+    transferPhoneNumber: rec.transferPhoneNumber,
+    emergencyKeywords: rec.emergencyKeywords,
+    smsSettings: (rec.smsSettings as SmsSettings | null) ?? null,
   };
 }
 
@@ -326,6 +445,80 @@ export class PrismaCustomToolRepository implements CustomToolRepository {
     // 운영 시 services/compliance 복호화 유틸을 여기서 거쳐야 한다.
     return rec.webhookSecret;
   }
+}
+
+// ── 테넌트 통화 기록 읽기(콘솔 "통화 기록" 화면) ─────────────────
+export class PrismaCallSessionReadRepository implements CallSessionReadRepository {
+  constructor(private readonly db: Db = prisma) {}
+
+  async listByTenant(
+    tenantId: TenantId,
+    options?: ListTenantCallsOptions,
+  ): Promise<TenantCallListItem[]> {
+    const rows = await this.db.callSession.findMany({
+      where: { tenantId },
+      orderBy: { startedAt: "desc" },
+      take: options?.limit ?? 50,
+      skip: options?.offset ?? 0,
+    });
+    return rows.map(toCallListItem);
+  }
+
+  async findByIdForTenant(
+    tenantId: TenantId,
+    callId: string,
+  ): Promise<TenantCallDetail | null> {
+    const rec = await this.db.callSession.findUnique({
+      where: { id: callId },
+      include: {
+        transcripts: { orderBy: { createdAt: "asc" } },
+        toolInvocations: { orderBy: { createdAt: "asc" } },
+      },
+    });
+    // 타 테넌트 통화는 존재 자체를 숨긴다(null → call_not_found) — 격리 강제.
+    if (!rec || rec.tenantId !== tenantId) return null;
+    return {
+      ...toCallListItem(rec),
+      recordingUrl: rec.recordingUrl,
+      summary: rec.summary,
+      transcript: rec.transcripts.map((t) => ({
+        role: t.role as SpeakerRole,
+        text: t.text, // 저장 시점에 이미 PII 마스킹된 텍스트(Transcript 모델 주석)
+        atSec: t.startMs != null ? Math.round(t.startMs / 1000) : 0,
+      })),
+      toolInvocations: rec.toolInvocations.map((t) => t.toolName),
+    };
+  }
+}
+
+function toCallListItem(rec: {
+  id: string;
+  clawopsCallId: string;
+  fromNumber: string;
+  toNumber: string;
+  direction: string;
+  intent: string | null;
+  emotion: string | null;
+  outcome: string | null;
+  subscriberId: string | null;
+  startedAt: Date;
+  durationSec: number | null;
+}): TenantCallListItem {
+  return {
+    id: rec.id,
+    clawOpsCallId: rec.clawopsCallId,
+    from: rec.fromNumber,
+    to: rec.toNumber,
+    direction: rec.direction as CallDirection,
+    intent: rec.intent,
+    emotion: rec.emotion as Emotion | null,
+    outcome: rec.outcome as CallOutcome | null,
+    subscriberId: rec.subscriberId,
+    // 구독자 프로필 연동(BoBi read port)은 테넌트 일반화 범위 밖 — 항상 null.
+    subscriberName: null,
+    startedAt: rec.startedAt.toISOString(),
+    durationSec: rec.durationSec ?? 0,
+  };
 }
 
 function toToolDefinition(rec: {

@@ -13,6 +13,8 @@ import type { TenantIntentDraft } from "../api/types";
 import { FormField, inputCls } from "../components/FormField";
 import { Loading, ErrorBlock, EmptyBlock } from "../components/StateBlock";
 import { Badge } from "../components/Badge";
+import { PageHeader } from "../components/PageHeader";
+import { btnPrimary, btnSecondary, btnSmall, btnSmallDanger } from "../components/ui";
 import { parseCsv, toCsv } from "../lib/format";
 
 const NO_ROUTING = "__none__";
@@ -27,9 +29,9 @@ const emptyDraft = (nextSortOrder: number): TenantIntentDraft => ({
 });
 
 /**
- * (b) 의도 카탈로그 탭 — TenantIntent 목록 테이블(key/label/keywords/
- * routingToolName/sortOrder/enabled), 추가/수정/삭제. routingToolName 은
- * SYSTEM_TOOL_NAMES(드롭다운) 또는 해당 테넌트의 TenantTool.name 중 선택.
+ * 에이전트 스튜디오 > 문의 유형 — 예약, 영업시간 문의처럼 자주 오는 전화
+ * 유형을 등록/수정/삭제한다(내부 계약은 TenantIntent — 사용자 노출 용어는
+ * brand-guide §5 에 따라 "문의 유형").
  */
 export function IntentsPage() {
   const tenantId = useTenantId();
@@ -74,23 +76,24 @@ export function IntentsPage() {
   if (error) return <ErrorBlock error={error} />;
 
   return (
-    <div>
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={startNew}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          + 의도 추가
-        </button>
-      </div>
+    <div className="mx-auto max-w-5xl">
+      <PageHeader
+        title="문의 유형"
+        subtitle="예약, 영업시간 문의처럼 자주 오는 전화 유형을 등록해 주세요."
+        actions={
+          <button onClick={startNew} className={btnPrimary}>
+            + 문의 유형 추가
+          </button>
+        }
+      />
 
       {editingKey ? (
-        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            {editingKey === "__new__" ? "새 의도" : "의도 편집"}
+        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-5">
+          <h2 className="mb-4 text-base font-semibold text-ink-800">
+            {editingKey === "__new__" ? "새 문의 유형" : "문의 유형 편집"}
           </h2>
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="key" hint="테넌트 스코프 유일 slug">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="구분 값" hint="영문 소문자 slug — 한 번 정하면 바꾸지 않는 게 좋아요.">
               <input
                 className={inputCls}
                 value={String(draft.key)}
@@ -99,7 +102,7 @@ export function IntentsPage() {
                 placeholder="예: reservation"
               />
             </FormField>
-            <FormField label="label">
+            <FormField label="이름">
               <input
                 className={inputCls}
                 value={draft.label}
@@ -107,16 +110,17 @@ export function IntentsPage() {
                 placeholder="예: 예약 문의"
               />
             </FormField>
-            <FormField label="keywords (쉼표 구분)">
+            <FormField label="인식 키워드" hint="쉼표로 구분해 입력해요.">
               <input
                 className={inputCls}
                 value={toCsv(draft.keywords)}
                 onChange={(e) =>
                   setDraft({ ...draft, keywords: parseCsv(e.target.value) })
                 }
+                placeholder="예: 예약, 자리, 몇 명"
               />
             </FormField>
-            <FormField label="routingToolName">
+            <FormField label="처리 방법" hint="이 문의가 오면 실행할 동작이에요.">
               <select
                 className={inputCls}
                 value={draft.routingToolName ?? NO_ROUTING}
@@ -128,8 +132,8 @@ export function IntentsPage() {
                   })
                 }
               >
-                <option value={NO_ROUTING}>(없음 — 기본 KB 폴백)</option>
-                <optgroup label="시스템 tool">
+                <option value={NO_ROUTING}>(기본 — 자주 묻는 질문에서 답변)</option>
+                <optgroup label="기본 동작">
                   {SYSTEM_TOOL_NAMES.map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -137,7 +141,7 @@ export function IntentsPage() {
                   ))}
                 </optgroup>
                 {tools && tools.length > 0 ? (
-                  <optgroup label="커스텀 tool">
+                  <optgroup label="내 연동">
                     {tools.map((t) => (
                       <option key={t.name} value={t.name}>
                         {t.name}
@@ -147,7 +151,7 @@ export function IntentsPage() {
                 ) : null}
               </select>
             </FormField>
-            <FormField label="sortOrder">
+            <FormField label="표시 순서">
               <input
                 type="number"
                 className={inputCls}
@@ -157,91 +161,99 @@ export function IntentsPage() {
                 }
               />
             </FormField>
-            <FormField label="enabled">
-              <label className="flex items-center gap-2 text-sm text-slate-600">
+            <FormField label="사용 여부">
+              <label className="flex items-center gap-2 py-2.5 text-sm text-ink-700">
                 <input
                   type="checkbox"
+                  className="h-4 w-4 accent-brand-500"
                   checked={draft.enabled}
                   onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
                 />
-                활성화
+                사용해요
               </label>
             </FormField>
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={cancel} className={btnSecondary}>
+              취소
+            </button>
             <button
               onClick={save}
               disabled={
-                create.isPending || update.isPending || !draft.label.trim() || !String(draft.key).trim()
+                create.isPending ||
+                update.isPending ||
+                !draft.label.trim() ||
+                !String(draft.key).trim()
               }
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              className={btnPrimary}
             >
               저장
-            </button>
-            <button
-              onClick={cancel}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-            >
-              취소
             </button>
           </div>
         </div>
       ) : null}
 
-      {data && data.length === 0 ? (
-        <EmptyBlock label="등록된 의도가 없습니다." />
+      {data && data.length === 0 && !editingKey ? (
+        <EmptyBlock label="아직 등록한 문의 유형이 없어요. 자주 오는 전화 유형부터 등록해 보세요.">
+          <button onClick={startNew} className={btnSecondary}>
+            첫 문의 유형 만들기
+          </button>
+        </EmptyBlock>
       ) : null}
 
       {data && data.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-xl border border-ink-200 bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
-              <tr>
-                <th className="px-4 py-2">key</th>
-                <th className="px-4 py-2">label</th>
-                <th className="px-4 py-2">keywords</th>
-                <th className="px-4 py-2">routingToolName</th>
-                <th className="px-4 py-2">sortOrder</th>
-                <th className="px-4 py-2">enabled</th>
-                <th className="px-4 py-2" />
+            <thead>
+              <tr className="border-b border-ink-200 text-left text-[13px] font-semibold text-ink-500">
+                <th className="px-4 py-3">이름</th>
+                <th className="px-4 py-3">인식 키워드</th>
+                <th className="hidden px-4 py-3 md:table-cell">처리 방법</th>
+                <th className="px-4 py-3">상태</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {[...data]
                 .sort((a, b) => a.sortOrder - b.sortOrder)
                 .map((intent) => (
-                  <tr key={String(intent.key)} className="border-t border-slate-100">
-                    <td className="px-4 py-2 font-mono text-xs">{String(intent.key)}</td>
-                    <td className="px-4 py-2">{intent.label}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {intent.keywords.map((k) => (
-                          <Badge key={k}>{k}</Badge>
-                        ))}
+                  <tr
+                    key={String(intent.key)}
+                    className="border-b border-ink-100 last:border-b-0 hover:bg-ink-50"
+                  >
+                    <td className="px-4 py-3.5">
+                      <div className="font-medium text-ink-900">{intent.label}</div>
+                      <div className="font-mono text-xs text-ink-400">
+                        {String(intent.key)}
                       </div>
                     </td>
-                    <td className="px-4 py-2 font-mono text-xs">
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap gap-1">
+                        {intent.keywords.length > 0 ? (
+                          intent.keywords.map((k) => <Badge key={k}>{k}</Badge>)
+                        ) : (
+                          <span className="text-ink-400">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="hidden px-4 py-3.5 font-mono text-xs text-ink-600 md:table-cell">
                       {intent.routingToolName ?? "—"}
                     </td>
-                    <td className="px-4 py-2">{intent.sortOrder}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-3.5">
                       {intent.enabled ? (
-                        <Badge tone="bg-green-100 text-green-700">활성</Badge>
+                        <Badge tone="bg-success-50 text-success-700">사용 중</Badge>
                       ) : (
-                        <Badge tone="bg-slate-100 text-slate-500">비활성</Badge>
+                        <Badge>꺼짐</Badge>
                       )}
                     </td>
-                    <td className="px-4 py-2">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => startEdit(intent)}
-                          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                        >
+                    <td className="px-4 py-3.5">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => startEdit(intent)} className={btnSmall}>
                           편집
                         </button>
                         <button
                           onClick={() => remove.mutate(String(intent.key))}
-                          className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                          className={btnSmallDanger}
                         >
                           삭제
                         </button>

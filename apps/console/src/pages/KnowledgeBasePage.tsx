@@ -5,6 +5,8 @@ import type { KnowledgeItem, KnowledgeItemDraft } from "../api/types";
 import { Badge } from "../components/Badge";
 import { Loading, ErrorBlock, EmptyBlock } from "../components/StateBlock";
 import { FormField, inputCls, textareaCls } from "../components/FormField";
+import { PageHeader } from "../components/PageHeader";
+import { btnPrimary, btnSecondary, btnSmall, btnSmallDanger } from "../components/ui";
 import { formatDateTime, parseCsv, toCsv } from "../lib/format";
 
 const emptyDraft = (): KnowledgeItemDraft => ({
@@ -15,8 +17,9 @@ const emptyDraft = (): KnowledgeItemDraft => ({
 });
 
 /**
- * 에이전트 스튜디오 — KB(FAQ) 편집기. 카테고리는 테넌트 의도 카탈로그의
- * key 중에서 선택(고정 enum 이 아니라 자유 정의된 TenantIntentKey 사용).
+ * 에이전트 스튜디오 > 자주 묻는 질문 — 질문/답변을 등록해두면 AI 상담원이
+ * 그대로 답변한다(내부 계약은 KB/KnowledgeItem — 사용자 노출 용어는
+ * brand-guide §5 에 따라 "자주 묻는 질문"). 분류는 문의 유형에서 고른다.
  */
 export function KnowledgeBasePage() {
   const tenantId = useTenantId();
@@ -70,12 +73,22 @@ export function KnowledgeBasePage() {
   if (error) return <ErrorBlock error={error} />;
 
   return (
-    <div>
-      <div className="mb-4 flex items-end justify-between">
-        <label className="text-xs font-medium text-slate-500">
-          카테고리 필터
+    <div className="mx-auto max-w-5xl">
+      <PageHeader
+        title="자주 묻는 질문"
+        subtitle="질문과 답변을 등록해두면 AI 상담원이 그대로 답변해요."
+        actions={
+          <button onClick={startNew} className={btnPrimary}>
+            + 질문 추가
+          </button>
+        }
+      />
+
+      <div className="mb-4">
+        <label className="text-[13px] font-semibold text-ink-700">
+          분류 필터
           <select
-            className="ml-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+            className="ml-2 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm font-normal text-ink-700"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
@@ -87,27 +100,21 @@ export function KnowledgeBasePage() {
             ))}
           </select>
         </label>
-        <button
-          onClick={startNew}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          + 새 항목
-        </button>
       </div>
 
       {editingId ? (
-        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            {editingId === "__new__" ? "새 FAQ" : "FAQ 편집"}
+        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-5">
+          <h2 className="mb-4 text-base font-semibold text-ink-800">
+            {editingId === "__new__" ? "새 질문" : "질문 편집"}
           </h2>
-          <div className="grid gap-3">
-            <FormField label="카테고리">
+          <div className="grid gap-4">
+            <FormField label="분류" hint="문의 유형에서 골라요.">
               <select
                 className={inputCls}
                 value={draft.category}
                 onChange={(e) => setDraft({ ...draft, category: e.target.value })}
               >
-                <option value="">선택</option>
+                <option value="">선택해 주세요</option>
                 {categoryOptions.map((c) => (
                   <option key={c.key} value={c.key}>
                     {c.label}
@@ -120,9 +127,10 @@ export function KnowledgeBasePage() {
                 className={inputCls}
                 value={draft.question}
                 onChange={(e) => setDraft({ ...draft, question: e.target.value })}
+                placeholder="예: 주차할 수 있나요?"
               />
             </FormField>
-            <FormField label="답변">
+            <FormField label="답변" hint="AI 상담원이 이 문장을 바탕으로 답변해요.">
               <textarea
                 rows={3}
                 className={textareaCls}
@@ -130,7 +138,7 @@ export function KnowledgeBasePage() {
                 onChange={(e) => setDraft({ ...draft, answer: e.target.value })}
               />
             </FormField>
-            <FormField label="태그 (쉼표 구분)">
+            <FormField label="태그" hint="쉼표로 구분해 입력해요.">
               <input
                 className={inputCls}
                 value={toCsv(draft.tags)}
@@ -138,60 +146,70 @@ export function KnowledgeBasePage() {
               />
             </FormField>
           </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={save}
-              disabled={create.isPending || update.isPending || !draft.question.trim() || !draft.answer.trim()}
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              저장
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={cancel} className={btnSecondary}>
+              취소
             </button>
             <button
-              onClick={cancel}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              onClick={save}
+              disabled={
+                create.isPending ||
+                update.isPending ||
+                !draft.question.trim() ||
+                !draft.answer.trim()
+              }
+              className={btnPrimary}
             >
-              취소
+              저장
             </button>
           </div>
         </div>
       ) : null}
 
-      {data && grouped.size === 0 ? <EmptyBlock label="등록된 FAQ 가 없습니다." /> : null}
+      {data && grouped.size === 0 && !editingId ? (
+        <EmptyBlock label="아직 등록한 질문이 없어요. 전화로 자주 받는 질문부터 채워보세요.">
+          <button onClick={startNew} className={btnSecondary}>
+            첫 질문 만들기
+          </button>
+        </EmptyBlock>
+      ) : null}
 
       <div className="space-y-6">
         {[...grouped.entries()].map(([cat, items]) => (
           <section key={cat}>
-            <h2 className="mb-2 text-sm font-semibold text-slate-600">
-              {labelFor(cat)} <span className="text-slate-400">({items.length})</span>
+            <h2 className="mb-2 text-base font-semibold text-ink-700">
+              {labelFor(cat)} <span className="font-normal text-ink-400">({items.length})</span>
             </h2>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {items.map((k) => (
-                <article key={String(k.id)} className="rounded-xl border border-slate-200 bg-white p-4">
+                <article
+                  key={String(k.id)}
+                  className="rounded-xl border border-ink-200 bg-white p-5 shadow-sm"
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-800">{k.question}</h3>
-                      <p className="mt-1 text-sm text-slate-600">{k.answer}</p>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {k.tags.map((t) => (
-                          <Badge key={t} tone="bg-brand-50 text-brand-700">
-                            #{t}
-                          </Badge>
-                        ))}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-400">
+                      <h3 className="text-sm font-semibold text-ink-900">{k.question}</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-ink-600">{k.answer}</p>
+                      {k.tags.length > 0 ? (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
+                          {k.tags.map((t) => (
+                            <Badge key={t} tone="bg-brand-100 text-brand-800">
+                              #{t}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 text-xs text-ink-400">
                         수정: {formatDateTime(k.updatedAt)}
                       </div>
                     </div>
                     <div className="flex shrink-0 gap-2">
-                      <button
-                        onClick={() => startEdit(k)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                      >
+                      <button onClick={() => startEdit(k)} className={btnSmall}>
                         편집
                       </button>
                       <button
                         onClick={() => remove.mutate(String(k.id))}
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                        className={btnSmallDanger}
                       >
                         삭제
                       </button>

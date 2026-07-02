@@ -19,14 +19,46 @@ import type {
   TenantSummary,
   CreateTenantAccountRequest,
   CreateTenantAccountResult,
+  ApproveTenantRequest,
+  RejectTenantRequest,
+  TenantReviewResult,
 } from "@colli/contracts";
+import { isPhoneNumberAssigned, makePendingPhoneNumber } from "@colli/contracts";
+
+/**
+ * 관리자 목록 행 — TenantSummary + 승인 큐 표시용 소유자 이메일(있으면 표시).
+ * ownerEmail 은 계약 밖 표시 전용 필드라 optional 로만 다룬다(없으면 "-").
+ */
+export type TenantAdminListItem = TenantSummary & { ownerEmail?: string | null };
+
+/**
+ * 봉투 에러를 code 로 판별할 수 있는 타입드 에러.
+ * 승인 모달의 phone_number_taken 인라인 처리 등에 사용한다.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export function apiErrorCode(err: unknown): string | null {
+  return err instanceof ApiError ? err.code : null;
+}
 
 export interface AuthApi {
   login(req: LoginRequest): Promise<LoginResponse>;
-  listTenants(): Promise<TenantSummary[]>;
+  listTenants(): Promise<TenantAdminListItem[]>;
   createTenantAccount(
     req: CreateTenantAccountRequest,
   ): Promise<CreateTenantAccountResult>;
+  /** POST /admin/tenants/:id/approve — 070 배정 + status=active */
+  approveTenant(tenantId: string, req: ApproveTenantRequest): Promise<TenantReviewResult>;
+  /** POST /admin/tenants/:id/reject — 사유 기록 + status=rejected */
+  rejectTenant(tenantId: string, req: RejectTenantRequest): Promise<TenantReviewResult>;
 }
 
 // ── 환경 토글 ───────────────────────────────────────────────────
@@ -41,7 +73,7 @@ export const IS_FIXTURE = DATA_SOURCE !== "fetch";
 // "tenant" 문자열이 포함되면 tenant_admin 목 계정을 반환해 apps/admin 의
 // 역할 거부 흐름도 fixture 모드에서 확인할 수 있게 한다.
 let fixtureTenantSeq = 1;
-const fixtureTenants: TenantSummary[] = [
+const fixtureTenants: TenantAdminListItem[] = [
   {
     tenantId: "tenant_bobi" as unknown as TenantSummary["tenantId"],
     slug: "bobi",
@@ -50,12 +82,44 @@ const fixtureTenants: TenantSummary[] = [
     phoneNumber: "+8207011112222",
     status: "active",
     plan: "pro",
+    ownerEmail: "owner@bobi.example",
+  },
+  // 승인 대기 목 2건 — 승인 큐 렌더 테스트/데모용. appliedAt 오름차순 정렬 확인을
+  // 위해 일부러 "나중 신청" 건을 배열 앞에 둔다.
+  {
+    tenantId: "tenant_pending_pasta" as unknown as TenantSummary["tenantId"],
+    slug: "yoonjung-pasta",
+    name: "윤정 파스타",
+    industryLabel: "식당·카페",
+    industryKey: "restaurant_cafe",
+    phoneNumber: makePendingPhoneNumber("yoonjung-pasta"),
+    status: "pending_approval",
+    plan: "trial",
+    contactPhone: "02-1234-5678",
+    appliedAt: "2026-06-30T09:15:00+09:00",
+    ownerEmail: "yoonjung@pasta.example",
+  },
+  {
+    tenantId: "tenant_pending_clinic" as unknown as TenantSummary["tenantId"],
+    slug: "taeho-clinic",
+    name: "태호 피부과",
+    industryLabel: "병원·의원",
+    industryKey: "hospital_clinic",
+    phoneNumber: makePendingPhoneNumber("taeho-clinic"),
+    status: "pending_approval",
+    plan: "pro",
+    contactPhone: "02-9876-5432",
+    appliedAt: "2026-06-29T14:00:00+09:00",
+    ownerEmail: "drpark@clinic.example",
   },
 ];
 
 function makeFixtureApi(): AuthApi {
   const delay = <T>(v: T): Promise<T> =>
     new Promise((r) => setTimeout(() => r(v), 120));
+
+  const fail = (code: string, message: string): Promise<never> =>
+    new Promise((_, reject) => setTimeout(() => reject(new ApiError(code, message)), 120));
 
   return {
     login: (req) => {
@@ -77,7 +141,7 @@ function makeFixtureApi(): AuthApi {
     listTenants: () => delay(fixtureTenants.map((t) => ({ ...t }))),
 
     createTenantAccount: (req) => {
-      const tenant: TenantSummary = {
+      const tenant: TenantAdminListItem = {
         tenantId: `tenant_fixture_${fixtureTenantSeq}` as unknown as TenantSummary["tenantId"],
         slug: req.companyName.trim().toLowerCase().replace(/\s+/g, "-") || `tenant-${fixtureTenantSeq}`,
         name: req.companyName,
@@ -85,6 +149,7 @@ function makeFixtureApi(): AuthApi {
         phoneNumber: req.phoneNumber,
         status: "onboarding",
         plan: "trial",
+        ownerEmail: req.adminEmail,
       };
       fixtureTenantSeq += 1;
       fixtureTenants.push(tenant);
@@ -96,6 +161,33 @@ function makeFixtureApi(): AuthApi {
         createdAt: new Date().toISOString(),
       };
       return delay({ tenantId: tenant.tenantId, account });
+    },
+
+    approveTenant: (tenantId, req) => {
+      const tenant = fixtureTenants.find((t) => String(t.tenantId) === tenantId);
+      if (!tenant) return fail("tenant_not_found", `no tenant: ${tenantId}`);
+      const taken = fixtureTenants.some(
+        (t) =>
+          String(t.tenantId) !== tenantId &&
+          isPhoneNumberAssigned(t.phoneNumber) &&
+          t.phoneNumber === req.phoneNumber,
+      );
+      if (taken) {
+        return fail("phone_number_taken", `phone number already assigned: ${req.phoneNumber}`);
+      }
+      tenant.status = "active";
+      tenant.phoneNumber = req.phoneNumber;
+      tenant.approvedAt = new Date().toISOString();
+      return delay({ tenant: { ...tenant } });
+    },
+
+    rejectTenant: (tenantId, req) => {
+      const tenant = fixtureTenants.find((t) => String(t.tenantId) === tenantId);
+      if (!tenant) return fail("tenant_not_found", `no tenant: ${tenantId}`);
+      tenant.status = "rejected";
+      tenant.rejectionReason = req.reason;
+      tenant.rejectedAt = new Date().toISOString();
+      return delay({ tenant: { ...tenant } });
     },
   };
 }
@@ -125,6 +217,11 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
+    // 봉투에 에러 코드가 담겨 왔으면 코드 보존(4xx 에도 봉투로 응답하는 라우트 대비)
+    const body = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
+    if (body && typeof body === "object" && "ok" in body && !body.ok && body.error) {
+      throw new ApiError(body.error.code, body.error.message);
+    }
     throw new Error(`API ${init?.method ?? "GET"} ${path} → ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
@@ -132,7 +229,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   if (body && typeof body === "object" && "ok" in body) {
     const envelope = body as ApiEnvelope<T>;
     if (!envelope.ok) {
-      throw new Error(
+      throw new ApiError(
+        envelope.error?.code ?? "unknown_error",
         `API ${init?.method ?? "GET"} ${path} → ${envelope.error?.code ?? "error"}: ${envelope.error?.message ?? "unknown error"}`,
       );
     }
@@ -147,6 +245,16 @@ function makeFetchApi(): AuthApi {
     listTenants: () => http("/admin/tenants"),
     createTenantAccount: (req) =>
       http("/admin/tenants", { method: "POST", body: JSON.stringify(req) }),
+    approveTenant: (tenantId, req) =>
+      http(`/admin/tenants/${encodeURIComponent(tenantId)}/approve`, {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
+    rejectTenant: (tenantId, req) =>
+      http(`/admin/tenants/${encodeURIComponent(tenantId)}/reject`, {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
   };
 }
 

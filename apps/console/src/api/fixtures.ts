@@ -1,9 +1,9 @@
 /**
- * 목(mock) 데이터 소스. 백엔드(apps/api 테넌트 엔드포인트)가 뜨기 전 UI 렌더/개발용.
- * VITE_DATA_SOURCE=fetch 로 전환하면 실제 API 를 호출한다(client.ts 참조).
+ * 목(mock) 데이터 소스 — 데모 모드(VITE_DATA_SOURCE!=="fetch") 전용.
  *
- * 기본 테넌트는 BoBi(테넌트 #1) — /docs/tenant-platform-architecture.md §4 의
- * 시드 값 명세를 그대로 반영한다(에이전트 설정/의도 7종).
+ * 기본 사업장은 BoBi(테넌트 #1) — /docs/tenant-platform-architecture.md §4 의
+ * 시드 값 명세를 그대로 반영한다(에이전트 설정/의도 7종). v3 에서 통화 기록
+ * fixture 와 "가입 데모용 승인 대기 사업장"(DEMO_PENDING_TENANT_ID)이 추가됐다.
  *
  * 브랜드ID 는 문자열이므로 `as` 캐스팅으로 만든다(런타임 동일, 타입 안전용).
  */
@@ -12,6 +12,7 @@ import type {
   TenantToolId,
   TenantIntentKey,
   KnowledgeItemId,
+  CallSessionId,
 } from "@colli/contracts";
 import type {
   TenantSummary,
@@ -19,14 +20,23 @@ import type {
   TenantIntentDefinition,
   CustomToolDefinition,
   KnowledgeItem,
+  TenantCallDetail,
 } from "./types";
 
 const tenantId = (s: string) => s as unknown as TenantId;
 const toolId = (s: string) => s as unknown as TenantToolId;
 const intentKey = (s: string) => s as unknown as TenantIntentKey;
 const kid = (s: string) => s as unknown as KnowledgeItemId;
+const callId = (s: string) => s as unknown as CallSessionId;
 
 export const BOBI_TENANT_ID = tenantId("tenant_bobi");
+
+/**
+ * 가입 위저드 데모용 승인 대기 사업장. 데모 모드에서 /signup 을 제출하면
+ * 이 사업장에 입력값이 덮어써지고(인메모리) 세션이 이 사업장으로 연결돼
+ * /pending 승인 대기 화면을 실제로 볼 수 있다. 새로고침하면 기본값으로 복원.
+ */
+export const DEMO_PENDING_TENANT_ID = tenantId("tenant_pending_demo");
 
 export const TENANTS: TenantSummary[] = [
   {
@@ -37,6 +47,22 @@ export const TENANTS: TenantSummary[] = [
     phoneNumber: "07052361037",
     status: "active",
     plan: "enterprise",
+    industryKey: "other",
+    contactPhone: "02-1234-5678",
+    appliedAt: "2026-05-02T10:00:00+09:00",
+    approvedAt: "2026-05-03T09:30:00+09:00",
+  },
+  {
+    tenantId: DEMO_PENDING_TENANT_ID,
+    slug: "dalkom-pasta",
+    name: "달콤한 파스타",
+    industryLabel: "식당·카페",
+    phoneNumber: "pending-dalkom-pasta",
+    status: "pending_approval",
+    plan: "trial",
+    industryKey: "restaurant_cafe",
+    contactPhone: "02-555-0100",
+    appliedAt: "2026-07-01T11:20:00+09:00",
   },
 ];
 
@@ -54,6 +80,32 @@ export const AGENT_CONFIGS: Record<string, TenantAgentConfig> = {
     ],
     intentUnresolvedFallbackTool: "request_callback",
     maxIntentAttempts: 2,
+    // v3 커스텀 확장 — 기본값(전부 비어있음 = 골든 패리티 상태)
+    closingText: null,
+    businessHours: null,
+    afterHoursMode: "callback",
+    afterHoursText: null,
+    transferPhoneNumber: null,
+    emergencyKeywords: [],
+    smsSettings: null,
+  },
+  [DEMO_PENDING_TENANT_ID]: {
+    tenantId: DEMO_PENDING_TENANT_ID,
+    serviceName: "달콤한 파스타",
+    agentName: "상담원",
+    greetingText: null,
+    personaInstructions: null,
+    toneExtra: [],
+    domainConstraints: [],
+    intentUnresolvedFallbackTool: "request_callback",
+    maxIntentAttempts: 2,
+    closingText: null,
+    businessHours: null,
+    afterHoursMode: "callback",
+    afterHoursText: null,
+    transferPhoneNumber: null,
+    emergencyKeywords: [],
+    smsSettings: null,
   },
 };
 
@@ -116,6 +168,7 @@ export const INTENTS_BY_TENANT: Record<string, TenantIntentDefinition[]> = {
       enabled: true,
     },
   ],
+  [DEMO_PENDING_TENANT_ID]: [],
 };
 
 export const TOOLS_BY_TENANT: Record<string, CustomToolDefinition[]> = {
@@ -125,7 +178,7 @@ export const TOOLS_BY_TENANT: Record<string, CustomToolDefinition[]> = {
       toolId: toolId("tool_check_reservation"),
       tenantId: BOBI_TENANT_ID,
       name: "check_reservation",
-      description: "예시 커스텀 tool: 외부 예약 시스템에서 예약 정보를 조회한다.",
+      description: "예시 연동: 외부 예약 시스템에서 예약 정보를 조회한다.",
       paramsSchema: {
         type: "object",
         properties: {
@@ -143,6 +196,7 @@ export const TOOLS_BY_TENANT: Record<string, CustomToolDefinition[]> = {
       enabled: true,
     },
   ],
+  [DEMO_PENDING_TENANT_ID]: [],
 };
 
 export const KB_BY_TENANT: Record<string, KnowledgeItem[]> = {
@@ -166,4 +220,135 @@ export const KB_BY_TENANT: Record<string, KnowledgeItem[]> = {
       updatedAt: "2026-06-22T09:00:00+09:00",
     },
   ],
+  [DEMO_PENDING_TENANT_ID]: [],
+};
+
+// ── 통화 기록 fixture (BoBi) — GET /tenants/:id/calls 목 데이터 ──
+export const CALLS_BY_TENANT: Record<string, TenantCallDetail[]> = {
+  [BOBI_TENANT_ID]: [
+    {
+      id: callId("call_1006"),
+      from: "01099875678",
+      to: "07052361037",
+      direction: "inbound",
+      intent: "usage",
+      outcome: "kb_answered",
+      startedAt: "2026-07-01T18:42:00+09:00",
+      durationSec: 96,
+      recordingUrl: null,
+      summary:
+        "고객 그룹 배정 방법 문의. 지식베이스 답변(고객 관리 > 그룹 메뉴)으로 즉시 안내 완료.",
+      transcript: [
+        { role: "system", text: "통화가 연결되었습니다. 서비스 품질을 위해 통화가 녹음됩니다.", atSec: 0 },
+        { role: "agent", text: "안녕하세요, BoBi 고객센터의 AI 상담원 보비입니다. 무엇을 도와드릴까요?", atSec: 2 },
+        { role: "caller", text: "고객을 그룹으로 나누고 싶은데 어디서 하나요?", atSec: 9 },
+        {
+          role: "agent",
+          text: "고객 관리 메뉴의 그룹 탭에서 '새 그룹'을 만들고 고객을 드래그해 배정하실 수 있어요. 더 도와드릴 게 있을까요?",
+          atSec: 15,
+        },
+        { role: "caller", text: "아니요, 됐어요. 감사합니다.", atSec: 28 },
+      ],
+      toolInvocations: ["get_kb_answer"],
+    },
+    {
+      id: callId("call_1005"),
+      from: "01044321234",
+      to: "07052361037",
+      direction: "inbound",
+      intent: "billing",
+      outcome: "selfservice_sent",
+      startedAt: "2026-07-01T14:05:00+09:00",
+      durationSec: 143,
+      recordingUrl: null,
+      summary:
+        "결제 카드 변경 요청. 정책상 전화로 카드정보를 받지 않음을 안내하고 셀프서비스 링크를 문자로 발송.",
+      transcript: [
+        { role: "agent", text: "안녕하세요, BoBi 고객센터의 AI 상담원 보비입니다.", atSec: 2 },
+        { role: "caller", text: "결제 카드를 바꾸고 싶어요. 번호 불러드릴게요.", atSec: 8 },
+        {
+          role: "agent",
+          text: "보안을 위해 카드 정보는 전화로 받지 않아요. 방금 문자로 보내드린 링크에서 직접 변경하실 수 있어요.",
+          atSec: 14,
+        },
+      ],
+      toolInvocations: ["verify_subscriber", "send_selfservice_link"],
+    },
+    {
+      id: callId("call_1004"),
+      from: "01055559012",
+      to: "07052361037",
+      direction: "inbound",
+      intent: "tech_error",
+      outcome: "ticket_created",
+      startedAt: "2026-06-30T16:27:00+09:00",
+      durationSec: 210,
+      recordingUrl: null,
+      summary: "고객 목록 업로드 실패 오류 신고. 재현 정보 접수 후 기술 지원 티켓 생성.",
+      transcript: [
+        { role: "caller", text: "엑셀 업로드가 계속 실패해요.", atSec: 7 },
+        {
+          role: "agent",
+          text: "불편을 드려 죄송해요. 오류가 난 파일 형식과 화면 메시지를 확인해 접수해 드릴게요.",
+          atSec: 12,
+        },
+      ],
+      toolInvocations: ["verify_subscriber", "create_ticket"],
+    },
+    {
+      id: callId("call_1003"),
+      from: "01077773456",
+      to: "07052361037",
+      direction: "inbound",
+      intent: "upgrade",
+      outcome: "transferred",
+      startedAt: "2026-06-30T11:12:00+09:00",
+      durationSec: 187,
+      recordingUrl: null,
+      summary: "Pro 요금제 업그레이드 상담 요청. 영업 담당자에게 호전환.",
+      transcript: [
+        { role: "caller", text: "Pro 플랜으로 바꾸면 뭐가 달라지나요?", atSec: 6 },
+        { role: "agent", text: "요금제 상담은 담당자를 연결해 드릴게요. 잠시만 기다려 주세요.", atSec: 40 },
+      ],
+      toolInvocations: ["route_to_sales", "escalate_to_human"],
+    },
+    {
+      id: callId("call_1002"),
+      from: "01022227890",
+      to: "07052361037",
+      direction: "inbound",
+      intent: null,
+      outcome: "callback_queued",
+      startedAt: "2026-06-29T20:48:00+09:00",
+      durationSec: 74,
+      recordingUrl: null,
+      summary: "문의 내용이 명확하지 않아 연락처를 받아 콜백 접수.",
+      transcript: [
+        { role: "caller", text: "저기… 그… 뭐 좀 물어보려고요.", atSec: 5 },
+        {
+          role: "agent",
+          text: "성함과 연락처를 남겨주시면 담당자가 영업시간에 바로 연락드릴게요.",
+          atSec: 34,
+        },
+      ],
+      toolInvocations: ["request_callback"],
+    },
+    {
+      id: callId("call_1001"),
+      from: "01033214567",
+      to: "07052361037",
+      direction: "inbound",
+      intent: "usage",
+      outcome: "abandoned",
+      startedAt: "2026-06-29T09:03:00+09:00",
+      durationSec: 21,
+      recordingUrl: null,
+      summary: null,
+      transcript: [
+        { role: "agent", text: "안녕하세요, BoBi 고객센터의 AI 상담원 보비입니다.", atSec: 2 },
+      ],
+      toolInvocations: [],
+    },
+  ],
+  [DEMO_PENDING_TENANT_ID]: [],
 };

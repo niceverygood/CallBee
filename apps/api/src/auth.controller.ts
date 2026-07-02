@@ -14,16 +14,23 @@
  * (@RequireRole)로 수행한다 — 이 컨트롤러는 HTTP 파라미터 파싱 + 응답 shape
  * 조립만 담당한다.
  */
-import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
-import type {
-  AdminAccountSummary,
-  CreateTenantAccountRequest,
-  CreateTenantAccountResult,
-  LoginRequest,
-  LoginResponse,
-  TenantSummary,
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  TENANT_STATUSES,
+  type AdminAccountSummary,
+  type ApproveTenantRequest,
+  type CreateTenantAccountRequest,
+  type CreateTenantAccountResult,
+  type LoginRequest,
+  type LoginResponse,
+  type RejectTenantRequest,
+  type TenantId,
+  type TenantReviewResult,
+  type TenantStatus,
+  type TenantSummary,
 } from "@colli/contracts";
 import { prisma } from "@colli/db";
+import { isValidPhoneNumberFormat } from "./signup.controller.js";
 import type { TenantRepository, TenantAgentConfigRepository } from "./tenant.ports.js";
 import type { AdminAccountRepository, AdminAccountRecord } from "./auth/auth.repository.js";
 import { TENANT_REPO, TENANT_AGENT_CONFIG_REPO, ADMIN_ACCOUNT_REPO } from "./tokens.js";
@@ -89,13 +96,131 @@ export class AuthController {
     }
   }
 
-  // ── platform_admin 전용: 전체 테넌트 목록 ───────────────────
+  // ── platform_admin 전용: 전체 테넌트 목록(?status= 필터 지원) ──
   @UseGuards(AuthGuard)
   @RequireRole("platform_admin")
   @Get("admin/tenants")
-  async listTenants(): Promise<ApiResult<TenantSummary[]>> {
-    const list = await this.tenants.list();
-    return { ok: true, data: list };
+  async listTenants(
+    @Query("status") status?: string,
+  ): Promise<ApiResult<TenantSummary[]>> {
+    try {
+      if (status !== undefined && !TENANT_STATUSES.includes(status as TenantStatus)) {
+        throw new WebhookValidationError(
+          "invalid_params",
+          `status 는 TENANT_STATUSES 중 하나여야 합니다: ${status}`,
+        );
+      }
+      const list = await this.tenants.list();
+      const filtered = status ? list.filter((t) => t.status === status) : list;
+      // 승인 큐(신청 대기)는 오래된 신청 먼저 처리한다(product-spec §3.2).
+      if (status === "pending_approval") {
+        filtered.sort((a, b) => (a.appliedAt ?? "").localeCompare(b.appliedAt ?? ""));
+      }
+      return { ok: true, data: filtered };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
+  // ── platform_admin 전용: 셀프 가입 신청 승인(070 번호 배정) ────
+  @UseGuards(AuthGuard)
+  @RequireRole("platform_admin")
+  @Post("admin/tenants/:id/approve")
+  async approveTenant(
+    @Param("id") id: string,
+    @Body() body: ApproveTenantRequest,
+  ): Promise<ApiResult<TenantReviewResult>> {
+    try {
+      const phoneNumber = (body.phoneNumber ?? "").trim();
+      if (!isValidPhoneNumberFormat(phoneNumber)) {
+        throw new WebhookValidationError(
+          "invalid_params",
+          "phoneNumber 는 숫자/하이픈만, 숫자 9~13자리여야 합니다",
+        );
+      }
+
+      const tenant = await this.tenants.findById(id as TenantId);
+      if (!tenant) {
+        return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
+      }
+      if (tenant.status !== "pending_approval") {
+        throw new WebhookValidationError(
+          "invalid_state",
+          `승인 대기(pending_approval) 상태에서만 승인할 수 있습니다 (현재: ${tenant.status})`,
+        );
+      }
+
+      // unique 충돌 사전 확인(인메모리/Prisma 공통 1차 방어) — 레이스는 아래
+      // P2002 catch 가 2차 방어선.
+      const holder = await this.tenants.findByPhoneNumber(phoneNumber);
+      if (holder && holder.tenantId !== tenant.tenantId) {
+        throw new WebhookValidationError(
+          "phone_number_taken",
+          "이미 다른 사업장에 배정된 번호예요.",
+        );
+      }
+
+      const updated = await this.tenants.update(tenant.tenantId, {
+        status: "active",
+        phoneNumber,
+        approvedAt: new Date().toISOString(),
+      });
+      if (!updated) {
+        return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
+      }
+      return { ok: true, data: { tenant: updated } };
+    } catch (err) {
+      // Prisma unique 제약(P2002, Tenant.phoneNumber) → phone_number_taken.
+      if ((err as { code?: string }).code === "P2002") {
+        return {
+          ok: false,
+          error: { code: "phone_number_taken", message: "이미 다른 사업장에 배정된 번호예요." },
+        };
+      }
+      return errResult(err);
+    }
+  }
+
+  // ── platform_admin 전용: 셀프 가입 신청 반려(사유 필수) ────────
+  @UseGuards(AuthGuard)
+  @RequireRole("platform_admin")
+  @Post("admin/tenants/:id/reject")
+  async rejectTenant(
+    @Param("id") id: string,
+    @Body() body: RejectTenantRequest,
+  ): Promise<ApiResult<TenantReviewResult>> {
+    try {
+      const reason = (body.reason ?? "").trim();
+      if (reason.length < 1 || reason.length > 500) {
+        throw new WebhookValidationError(
+          "invalid_params",
+          "reason 은 1~500자 필수입니다(신청자에게 그대로 보여집니다)",
+        );
+      }
+
+      const tenant = await this.tenants.findById(id as TenantId);
+      if (!tenant) {
+        return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
+      }
+      if (tenant.status !== "pending_approval") {
+        throw new WebhookValidationError(
+          "invalid_state",
+          `승인 대기(pending_approval) 상태에서만 반려할 수 있습니다 (현재: ${tenant.status})`,
+        );
+      }
+
+      const updated = await this.tenants.update(tenant.tenantId, {
+        status: "rejected",
+        rejectionReason: reason,
+        rejectedAt: new Date().toISOString(),
+      });
+      if (!updated) {
+        return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
+      }
+      return { ok: true, data: { tenant: updated } };
+    } catch (err) {
+      return errResult(err);
+    }
   }
 
   // ── platform_admin 전용: 신규 테넌트 + 첫 tenant_admin 계정 생성 ──
