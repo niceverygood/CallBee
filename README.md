@@ -1,7 +1,12 @@
-# Colli-BoBi — BoBi 고객센터
+<p align="center">
+  <img src="./apps/console/public/app-icon.png" alt="콜비(Callbee) 마스코트" width="140" />
+</p>
 
-보험설계사(BoBi 유료 구독자)의 문의 전화를 AI가 실시간으로 받아 응대하는 고객센터.
-070 인바운드 → 본인확인 → 의도분류 → (KB 응답 / 티켓 / 셀프서비스 / 영업 인계) → 카카오 알림톡.
+<h1 align="center">콜비(Callbee) — 사장님 대신 전화 받는 AI 상담원</h1>
+
+온·오프라인 사업장의 전화 고객센터를 AI가 대신 받아주는 멀티테넌트 플랫폼.
+070 인바운드 → 의도분류 → (KB 응답 / 티켓 / 콜백 / 호전환) → 카카오 알림톡.
+BoBi(보험설계사 SaaS) 고객센터는 이 플랫폼의 **테넌트 #1** 로 운영된다(프로젝트 코드네임: Colli-BoBi).
 
 > 프로젝트 규칙·가드레일은 [`CLAUDE.md`](./CLAUDE.md), Worker 착수 계약은 [`docs/worker-contracts.md`](./docs/worker-contracts.md) 참조.
 
