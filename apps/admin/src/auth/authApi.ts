@@ -23,7 +23,11 @@ import type {
   RejectTenantRequest,
   TenantReviewResult,
 } from "@colli/contracts";
-import { isPhoneNumberAssigned, makePendingPhoneNumber } from "@colli/contracts";
+import {
+  findIndustryTemplatePack,
+  isPhoneNumberAssigned,
+  makePendingPhoneNumber,
+} from "@colli/contracts";
 
 /**
  * 관리자 목록 행 — TenantSummary + 승인 큐 표시용 소유자 이메일(있으면 표시).
@@ -178,7 +182,27 @@ function makeFixtureApi(): AuthApi {
       tenant.status = "active";
       tenant.phoneNumber = req.phoneNumber;
       tenant.approvedAt = new Date().toISOString();
-      return delay({ tenant: { ...tenant } });
+      // 실서버(auth.controller.ts)의 승인 시 업종 팩 자동 적용을 데모로 재현 —
+      // fixture 에는 의도/KB 저장소가 없으므로 "빈 테넌트에 첫 적용" 요약을 만든다.
+      const pack = findIndustryTemplatePack(tenant.industryKey ?? null);
+      const industryTemplate = pack
+        ? {
+            industryKey: pack.industryKey,
+            packTitle: pack.title,
+            agentConfigCreated: false,
+            agentConfigUpdated: true,
+            createdIntentKeys: pack.intents.map((i) => i.key),
+            skippedIntentKeys: [],
+            createdKbQuestionsNeedingAnswer: pack.kbItems
+              .filter((k) => !k.enabledOnApply)
+              .map((k) => k.question),
+            createdKbQuestionsEnabled: pack.kbItems
+              .filter((k) => k.enabledOnApply)
+              .map((k) => k.question),
+            skippedKbQuestions: [],
+          }
+        : null;
+      return delay({ tenant: { ...tenant }, industryTemplate });
     },
 
     rejectTenant: (tenantId, req) => {

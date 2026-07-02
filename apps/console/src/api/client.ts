@@ -37,8 +37,15 @@ import type {
   SignupRequest,
   SignupResult,
   AdminAccountSummary,
+  ApplyIndustryTemplateResult,
+  KnowledgeItemId,
 } from "@colli/contracts";
-import { findIndustryPreset, makePendingPhoneNumber } from "@colli/contracts";
+import {
+  findIndustryPreset,
+  findIndustryTemplatePack,
+  makePendingPhoneNumber,
+  planIndustryTemplateApply,
+} from "@colli/contracts";
 import {
   TENANTS,
   AGENT_CONFIGS,
@@ -100,6 +107,15 @@ export interface ConsoleApi {
     draft: CustomToolDraft,
   ): Promise<CustomToolDefinition>;
   deleteTool(tenantId: string, toolId: string): Promise<void>;
+
+  /**
+   * 업종 팩 적용(비파괴 merge) — POST /tenants/:id/industry-template.
+   * industryKey 미지정이면 가입 업종의 팩을 적용한다.
+   */
+  applyIndustryTemplate(
+    tenantId: string,
+    industryKey?: string | null,
+  ): Promise<ApplyIndustryTemplateResult>;
 
   listKb(tenantId: string): Promise<KnowledgeItem[]>;
   createKb(tenantId: string, draft: KnowledgeItemDraft): Promise<KnowledgeItem>;
@@ -355,6 +371,82 @@ function makeFixtureApi(): ConsoleApi {
       return delay(undefined);
     },
 
+    // 실서버(industry-template.service.ts)와 같은 planner 를 써서 데모에서도
+    // 동일한 비파괴 merge 의미론을 재현한다(계획 로직은 @colli/contracts 단일 소스).
+    applyIndustryTemplate: (id, industryKeyOverride) => {
+      const t = findTenant(id);
+      const key = industryKeyOverride?.trim() || t.industryKey || null;
+      const pack = findIndustryTemplatePack(key);
+      if (!pack) {
+        return Promise.reject(
+          new ApiError(
+            "template_not_found",
+            `이 업종은 아직 템플릿 팩이 없어요: ${key ?? "(업종 미지정)"}`,
+          ),
+        );
+      }
+      const cfg = agentConfigs[id] ?? null;
+      const intentList = intents[id] ?? (intents[id] = []);
+      const kbList = kb[id] ?? (kb[id] = []);
+
+      const plan = planIndustryTemplateApply(pack, {
+        serviceName: cfg?.serviceName ?? t.name,
+        agentConfig: cfg,
+        existingIntents: intentList.map((i) => ({
+          key: String(i.key),
+          sortOrder: i.sortOrder,
+        })),
+        existingKbQuestions: kbList.map((k) => k.question),
+      });
+
+      if (plan.agentConfigChanged) {
+        agentConfigs[id] = {
+          tenantId: id as unknown as TenantAgentConfig["tenantId"],
+          ...plan.agentConfig,
+          toneExtra: [...plan.agentConfig.toneExtra],
+          domainConstraints: [...plan.agentConfig.domainConstraints],
+          emergencyKeywords: [...(plan.agentConfig.emergencyKeywords ?? [])],
+        };
+      }
+      for (const intent of plan.intentsToCreate) {
+        intentList.push({
+          key: intent.key as TenantIntentDefinition["key"],
+          label: intent.label,
+          keywords: [...intent.keywords],
+          routingToolName: intent.routingToolName,
+          sortOrder: intent.sortOrder,
+          enabled: intent.enabled,
+        });
+      }
+      const createdKbQuestionsNeedingAnswer: string[] = [];
+      const createdKbQuestionsEnabled: string[] = [];
+      for (const item of plan.kbToCreate) {
+        kbList.unshift({
+          id: `kb_pack_${kbSeq++}` as unknown as KnowledgeItemId,
+          category: item.category,
+          question: item.question,
+          answer: item.answer,
+          tags: [...item.keywords],
+          enabled: item.enabled,
+          updatedAt: new Date().toISOString(),
+        });
+        (item.enabled ? createdKbQuestionsEnabled : createdKbQuestionsNeedingAnswer).push(
+          item.question,
+        );
+      }
+      return delay({
+        industryKey: pack.industryKey,
+        packTitle: pack.title,
+        agentConfigCreated: plan.agentConfigCreated,
+        agentConfigUpdated: plan.agentConfigChanged && !plan.agentConfigCreated,
+        createdIntentKeys: plan.intentsToCreate.map((i) => i.key),
+        skippedIntentKeys: plan.skippedIntentKeys,
+        createdKbQuestionsNeedingAnswer,
+        createdKbQuestionsEnabled,
+        skippedKbQuestions: plan.skippedKbQuestions,
+      });
+    },
+
     listKb: (id) => delay((kb[id] ?? []).map((k) => ({ ...k, tags: [...k.tags] }))),
     createKb: (id, draft) => {
       const list = kb[id] ?? (kb[id] = []);
@@ -500,6 +592,12 @@ function makeFetchApi(): ConsoleApi {
     deleteTool: (id, toolIdParam) =>
       http(`${base(id)}/tools/${encodeURIComponent(toolIdParam)}`, {
         method: "DELETE",
+      }),
+
+    applyIndustryTemplate: (id, industryKeyOverride) =>
+      http(`${base(id)}/industry-template`, {
+        method: "POST",
+        body: JSON.stringify({ industryKey: industryKeyOverride ?? null }),
       }),
 
     listKb: (id) => http(`${base(id)}/kb`),

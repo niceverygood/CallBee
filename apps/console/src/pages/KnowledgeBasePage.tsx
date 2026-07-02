@@ -14,6 +14,7 @@ const emptyDraft = (): KnowledgeItemDraft => ({
   question: "",
   answer: "",
   tags: [],
+  enabled: true,
 });
 
 /**
@@ -58,7 +59,13 @@ export function KnowledgeBasePage() {
   };
   const startEdit = (k: KnowledgeItem) => {
     setEditingId(String(k.id));
-    setDraft({ category: k.category, question: k.question, answer: k.answer, tags: [...k.tags] });
+    setDraft({
+      category: k.category,
+      question: k.question,
+      answer: k.answer,
+      tags: [...k.tags],
+      enabled: k.enabled,
+    });
   };
   const cancel = () => setEditingId(null);
   const save = () => {
@@ -188,7 +195,14 @@ export function KnowledgeBasePage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-ink-900">{k.question}</h3>
+                      <h3 className="text-sm font-semibold text-ink-900">
+                        {k.question}
+                        {!k.enabled ? (
+                          <Badge tone="ml-2 bg-ink-100 text-ink-500">
+                            꺼짐 — 답변 확인 후 켜 주세요
+                          </Badge>
+                        ) : null}
+                      </h3>
                       <p className="mt-1 text-sm leading-relaxed text-ink-600">{k.answer}</p>
                       {k.tags.length > 0 ? (
                         <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -204,6 +218,19 @@ export function KnowledgeBasePage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 gap-2">
+                      <button
+                        onClick={() =>
+                          update.mutate({ id: String(k.id), patch: { enabled: !k.enabled } })
+                        }
+                        className={btnSmall}
+                        title={
+                          k.enabled
+                            ? "끄면 통화에서 이 답변을 쓰지 않아요"
+                            : "켜면 통화에서 이 답변을 사용해요"
+                        }
+                      >
+                        {k.enabled ? "끄기" : "켜기"}
+                      </button>
                       <button onClick={() => startEdit(k)} className={btnSmall}>
                         편집
                       </button>

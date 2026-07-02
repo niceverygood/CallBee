@@ -12,6 +12,7 @@ import {
 import { InMemoryTrace, InMemoryKnowledgeRepository } from "../adapters/in-memory.js";
 import { TenantResolverService } from "../tenant-resolver.service.js";
 import { CustomToolExecutor } from "../custom-tool-executor.service.js";
+import { IndustryTemplateService } from "../industry-template.service.js";
 import { TenantsController } from "../tenants.controller.js";
 import type { RequestWithAccount } from "../auth/auth.guard.js";
 
@@ -71,6 +72,13 @@ export function makeTenantHarness() {
     trace,
   });
 
+  const industryTemplates = new IndustryTemplateService({
+    tenants,
+    agentConfigs,
+    intents,
+    knowledge,
+  });
+
   const controller = new TenantsController(
     tenants,
     agentConfigs,
@@ -79,6 +87,7 @@ export function makeTenantHarness() {
     knowledge,
     resolver,
     callSessions,
+    industryTemplates,
   );
 
   return {
@@ -92,6 +101,7 @@ export function makeTenantHarness() {
     callSessions,
     resolver,
     executor,
+    industryTemplates,
     controller,
   };
 }

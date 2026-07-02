@@ -146,6 +146,21 @@ export function useDeleteTool(tenantId: string) {
   });
 }
 
+// ── 업종 팩 적용 ────────────────────────────────────────────────
+// 설정·의도·KB 를 한 번에 만드므로 세 쿼리를 모두 invalidate 한다.
+export function useApplyIndustryTemplate(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (industryKey?: string | null) =>
+      api.applyIndustryTemplate(tenantId, industryKey),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.agentConfig(tenantId) });
+      void qc.invalidateQueries({ queryKey: qk.intents(tenantId) });
+      void qc.invalidateQueries({ queryKey: qk.kb(tenantId) });
+    },
+  });
+}
+
 // ── KB(FAQ) ─────────────────────────────────────────────────────
 export function useKb(tenantId: string) {
   return useQuery({

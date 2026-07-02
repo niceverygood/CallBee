@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { TenantStatus } from "@colli/contracts";
+import type { TenantStatus, TenantReviewResult } from "@colli/contracts";
 import {
   TENANT_STATUS_LABELS,
   TENANT_PLAN_METAS,
@@ -366,9 +366,20 @@ export function TenantsAdminPage() {
         <ApproveModal
           tenant={approveTarget}
           onClose={() => setApproveTarget(null)}
-          onSuccess={() => {
+          onSuccess={(result) => {
             setApproveTarget(null);
-            showToast("승인 완료 — 070 배정됨");
+            // 업종 팩 자동 적용 결과까지 관리자에게 그대로 알린다(v0.6.0).
+            if (result.industryTemplate) {
+              showToast(
+                `승인 완료 — 070 배정됨 · ${result.industryTemplate.packTitle} 자동 적용(문의 유형 ${result.industryTemplate.createdIntentKeys.length}개)`,
+              );
+            } else if (result.industryTemplateError) {
+              showToast(
+                `승인 완료 — 070 배정됨 · 업종 팩 자동 적용 실패(콘솔에서 수동 적용 가능): ${result.industryTemplateError}`,
+              );
+            } else {
+              showToast("승인 완료 — 070 배정됨");
+            }
             qc.invalidateQueries({ queryKey: qk.tenants });
           }}
         />
@@ -426,7 +437,8 @@ function ApproveModal({
 }: {
   tenant: TenantAdminListItem;
   onClose: () => void;
-  onSuccess: () => void;
+  /** 승인 응답 전체를 넘긴다 — 업종 팩 자동 적용 결과를 토스트에 반영(v0.6.0). */
+  onSuccess: (result: TenantReviewResult) => void;
 }) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -434,7 +446,7 @@ function ApproveModal({
   const approve = useMutation({
     mutationFn: () =>
       authApi.approveTenant(String(tenant.tenantId), { phoneNumber: phoneNumber.trim() }),
-    onSuccess,
+    onSuccess: (result) => onSuccess(result),
     onError: (err) => {
       if (apiErrorCode(err) === "phone_number_taken") {
         setFieldError("이미 다른 사업장에 배정된 번호예요.");

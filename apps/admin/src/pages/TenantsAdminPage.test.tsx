@@ -79,7 +79,10 @@ describe("TenantsAdminPage — 승인 큐", () => {
     fireEvent.change(input, { target: { value: "070-1234-5678" } });
     fireEvent.click(screen.getByRole("button", { name: "승인하기" }));
 
-    expect(await screen.findByText("승인 완료 — 070 배정됨")).toBeInTheDocument();
+    // 태호 피부과(hospital_clinic)는 승인 시 업종 팩이 자동 적용된다(v0.6.0)
+    expect(
+      await screen.findByText("승인 완료 — 070 배정됨 · 병원·의원 팩 자동 적용(문의 유형 5개)"),
+    ).toBeInTheDocument();
     expect(
       await screen.findByRole("button", { name: "신청 대기 1" }),
     ).toBeInTheDocument();

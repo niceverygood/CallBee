@@ -17,6 +17,10 @@ import { TenantsController } from "./tenants.controller.js";
 import { OnboardingController } from "./onboarding.controller.js";
 import { TenantResolverService } from "./tenant-resolver.service.js";
 import {
+  IndustryTemplateService,
+  type IndustryTemplateServiceDeps,
+} from "./industry-template.service.js";
+import {
   CustomToolExecutor,
   type CustomToolExecutorDeps,
 } from "./custom-tool-executor.service.js";
@@ -53,7 +57,7 @@ import type {
   CustomToolRepository,
   WebhookToolInvoker,
 } from "./tenant.ports.js";
-import type { TracePort } from "./ports.js";
+import type { TracePort, KnowledgeRepository } from "./ports.js";
 
 // 인메모리(기본) 포트 프로바이더.
 const inMemoryPortProviders: Provider[] = [
@@ -110,6 +114,20 @@ const resolverProvider: Provider = {
   inject: [TENANT_REPO, TENANT_AGENT_CONFIG_REPO, TENANT_INTENT_REPO, CUSTOM_TOOL_REPO],
 };
 
+const industryTemplateProvider: Provider = {
+  provide: IndustryTemplateService,
+  useFactory: (
+    tenants: TenantRepository,
+    agentConfigs: TenantAgentConfigRepository,
+    intents: TenantIntentRepository,
+    knowledge: KnowledgeRepository,
+  ): IndustryTemplateService => {
+    const deps: IndustryTemplateServiceDeps = { tenants, agentConfigs, intents, knowledge };
+    return new IndustryTemplateService(deps);
+  },
+  inject: [TENANT_REPO, TENANT_AGENT_CONFIG_REPO, TENANT_INTENT_REPO, KNOWLEDGE_REPO],
+};
+
 const customToolExecutorProvider: Provider = {
   provide: CustomToolExecutor,
   useFactory: (
@@ -131,10 +149,18 @@ const customToolExecutorProvider: Provider = {
   providers: [
     ...defaultPortProviders,
     resolverProvider,
+    industryTemplateProvider,
     customToolExecutorProvider,
   ],
   // TENANT_REPO/TENANT_AGENT_CONFIG_REPO 는 AuthModule(auth.controller.ts 의
   // POST /admin/tenants — 신규 테넌트+에이전트설정+계정 생성)이 재사용한다.
-  exports: [TenantResolverService, CustomToolExecutor, TENANT_REPO, TENANT_AGENT_CONFIG_REPO],
+  // IndustryTemplateService 는 승인(approve) 시 업종 팩 자동 적용에 쓰인다.
+  exports: [
+    TenantResolverService,
+    CustomToolExecutor,
+    IndustryTemplateService,
+    TENANT_REPO,
+    TENANT_AGENT_CONFIG_REPO,
+  ],
 })
 export class TenantModule {}

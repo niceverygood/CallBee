@@ -24,6 +24,7 @@ import {
 import {
   AFTER_HOURS_MODES,
   type AfterHoursMode,
+  type ApplyIndustryTemplateResult,
   type TenantId,
   type TenantStatus,
   type TenantPlan,
@@ -46,6 +47,7 @@ import type {
 import type { KnowledgeRepository, KnowledgeRecord } from "./ports.js";
 import { PrismaKnowledgeRepository } from "./adapters/prisma.js";
 import { TenantResolverService } from "./tenant-resolver.service.js";
+import { IndustryTemplateService } from "./industry-template.service.js";
 import {
   TENANT_REPO,
   TENANT_AGENT_CONFIG_REPO,
@@ -65,13 +67,18 @@ import { AuthGuard, type RequestWithAccount } from "./auth/auth.guard.js";
 // (type-only import 는 컴파일 시 제거되므로 런타임 순환 의존이 발생하지 않는다).
 import { isValidPhoneNumberFormat } from "./signup.controller.js";
 
-/** apps/console 의 KnowledgeItem shape (types.ts) — id/category/question/answer/tags/updatedAt. */
+/**
+ * apps/console 의 KnowledgeItem shape (types.ts) — id/category/question/answer/
+ * tags/enabled/updatedAt. enabled=false 는 "답변을 채우고 켜기 전" 상태로,
+ * 통화 검색(KnowledgeRepository.search)에서 제외된다(업종 팩의 예시 KB 플로우).
+ */
 export interface KnowledgeItemDto {
   id: string;
   category: string;
   question: string;
   answer: string;
   tags: string[];
+  enabled: boolean;
   updatedAt: string;
 }
 
@@ -82,6 +89,7 @@ function toKnowledgeItemDto(rec: KnowledgeRecord): KnowledgeItemDto {
     question: rec.question,
     answer: rec.answer,
     tags: rec.keywords,
+    enabled: rec.enabled,
     updatedAt: rec.updatedAt.toISOString(),
   };
 }
@@ -160,6 +168,9 @@ export class TenantsController {
     @Inject(TenantResolverService) private readonly resolver: TenantResolverService,
     @Inject(CALL_SESSION_READ_REPO)
     private readonly callSessions: CallSessionReadRepository,
+    // TenantResolverService 와 동일 사유로 명시적 @Inject(위 주석 참조).
+    @Inject(IndustryTemplateService)
+    private readonly industryTemplates: IndustryTemplateService,
   ) {}
 
   /**
@@ -357,6 +368,30 @@ export class TenantsController {
     }
   }
 
+  // ── 업종 템플릿 팩 적용(에이전트 스튜디오 "업종 팩" — 비파괴 merge) ──
+  // body.industryKey 미지정이면 가입 업종(tenant.industryKey)의 팩을 적용한다.
+  // 기존 의도 key/KB 질문/채워진 설정 필드는 절대 덮어쓰지 않는다(계획 로직은
+  // @colli/contracts 의 planIndustryTemplateApply — 콘솔 데모 모드와 공유).
+  @UseGuards(AuthGuard)
+  @Post(":id/industry-template")
+  async applyIndustryTemplate(
+    @Req() req: RequestWithAccount,
+    @Param("id") id: string,
+    @Body() body: { industryKey?: string | null } | undefined,
+  ): Promise<ApiResult<ApplyIndustryTemplateResult>> {
+    // try 밖에서 호출 — ForbiddenException 이 그대로 HTTP 403 으로 전파된다.
+    this.assertTenantScope(req, id);
+    try {
+      const result = await this.industryTemplates.apply(
+        id as TenantId,
+        body?.industryKey ?? null,
+      );
+      return { ok: true, data: result };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
   // ── 테넌트 의도 카탈로그 CRUD ────────────────────────────────
   @UseGuards(AuthGuard)
   @Get(":id/intents")
@@ -543,6 +578,7 @@ export class TenantsController {
       question: string;
       answer: string;
       tags?: string[];
+      enabled?: boolean;
     },
   ): Promise<ApiResult<KnowledgeItemDto>> {
     try {
@@ -558,6 +594,7 @@ export class TenantsController {
         question: body.question,
         answer: body.answer,
         keywords: body.tags ?? [],
+        enabled: body.enabled,
       });
       return { ok: true, data: toKnowledgeItemDto(rec) };
     } catch (err) {
@@ -577,6 +614,7 @@ export class TenantsController {
       question?: string;
       answer?: string;
       tags?: string[];
+      enabled?: boolean;
     },
   ): Promise<ApiResult<KnowledgeItemDto>> {
     try {
@@ -591,6 +629,7 @@ export class TenantsController {
         question: body.question,
         answer: body.answer,
         keywords: body.tags,
+        enabled: body.enabled,
       });
       return { ok: true, data: toKnowledgeItemDto(rec) };
     } catch (err) {

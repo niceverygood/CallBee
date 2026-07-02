@@ -208,6 +208,7 @@ export const KB_BY_TENANT: Record<string, KnowledgeItem[]> = {
       answer:
         "고객 관리 > 그룹 메뉴에서 '새 그룹'을 만들고 고객을 드래그해 배정할 수 있습니다.",
       tags: ["그룹", "고객관리", "세그먼트"],
+      enabled: true,
       updatedAt: "2026-06-20T09:00:00+09:00",
     },
     {
@@ -217,6 +218,7 @@ export const KB_BY_TENANT: Record<string, KnowledgeItem[]> = {
       answer:
         "보안을 위해 카드정보는 전화로 받지 않습니다. 알림톡으로 발송되는 셀프서비스 링크에서 직접 변경해 주세요.",
       tags: ["결제", "카드", "셀프서비스"],
+      enabled: true,
       updatedAt: "2026-06-22T09:00:00+09:00",
     },
   ],

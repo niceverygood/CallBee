@@ -19,6 +19,7 @@ import type {
   TenantStatus,
   TenantSummary,
 } from "./tenant.js";
+import type { ApplyIndustryTemplateResult } from "./industry-templates.js";
 
 export type AdminAccountId = Brand<string, "AdminAccountId">;
 
@@ -130,4 +131,15 @@ export interface RejectTenantRequest {
 /** 승인/반려 공통 응답 — 갱신된 테넌트 요약. */
 export interface TenantReviewResult {
   tenant: TenantSummary;
+  /**
+   * 승인 시 자동 적용된 업종 팩 요약(approve 전용, v0.6.0).
+   * - 가입 업종(industryKey)에 팩이 있으면 승인 성공 직후 비파괴 merge 로
+   *   자동 적용된다(사장님이 스튜디오를 열기 전에 시작 설정이 깔려 있게).
+   * - 팩이 없는 업종(other/미지정)이거나 reject 응답이면 null/미지정.
+   * - 적용 실패는 승인을 실패시키지 않는다 — industryTemplateError 에 사유만
+   *   담고 tenant 는 정상 active 로 반환된다(관리자 화면에서 안내).
+   */
+  industryTemplate?: ApplyIndustryTemplateResult | null;
+  /** 자동 적용 실패 사유(성공/미대상이면 미지정) */
+  industryTemplateError?: string;
 }

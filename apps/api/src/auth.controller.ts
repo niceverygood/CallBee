@@ -29,10 +29,12 @@ import {
   type TenantStatus,
   type TenantSummary,
 } from "@colli/contracts";
+import { findIndustryTemplatePack } from "@colli/contracts";
 import { prisma } from "@colli/db";
 import { isValidPhoneNumberFormat } from "./signup.controller.js";
 import type { TenantRepository, TenantAgentConfigRepository } from "./tenant.ports.js";
 import type { AdminAccountRepository, AdminAccountRecord } from "./auth/auth.repository.js";
+import { IndustryTemplateService } from "./industry-template.service.js";
 import { TENANT_REPO, TENANT_AGENT_CONFIG_REPO, ADMIN_ACCOUNT_REPO } from "./tokens.js";
 import { hashPassword, verifyPassword } from "./auth/password.js";
 import { signToken } from "./auth/token.js";
@@ -65,6 +67,9 @@ export class AuthController {
     @Inject(TENANT_AGENT_CONFIG_REPO)
     private readonly agentConfigs: TenantAgentConfigRepository,
     @Inject(ADMIN_ACCOUNT_REPO) private readonly accounts: AdminAccountRepository,
+    // tsx 는 emitDecoratorMetadata 미지원 — 명시적 @Inject(tenants.controller.ts 와 동일 사유).
+    @Inject(IndustryTemplateService)
+    private readonly industryTemplates: IndustryTemplateService,
   ) {}
 
   // ── 로그인(인증 불필요) ──────────────────────────────────────
@@ -168,7 +173,27 @@ export class AuthController {
       if (!updated) {
         return { ok: false, error: { code: "tenant_not_found", message: `no tenant: ${id}` } };
       }
-      return { ok: true, data: { tenant: updated } };
+
+      // ── 업종 팩 자동 적용(v0.6.0) — 사장님이 스튜디오를 열기 전에 시작
+      // 설정(문의 유형/응대 수칙/예시 KB)이 깔려 있게 한다. 비파괴 merge 라
+      // 이미 설정한 항목은 건드리지 않고, 재승인·수동 적용과도 멱등이다.
+      // 실패해도 승인 자체는 성공시킨다(수동 적용 경로가 콘솔에 있으므로) —
+      // 사유만 industryTemplateError 로 관리자에게 알린다.
+      const result: TenantReviewResult = { tenant: updated };
+      if (findIndustryTemplatePack(updated.industryKey ?? null)) {
+        try {
+          result.industryTemplate = await this.industryTemplates.apply(
+            updated.tenantId,
+            null,
+          );
+        } catch (applyErr) {
+          result.industryTemplateError =
+            applyErr instanceof Error ? applyErr.message : "업종 팩 자동 적용 실패";
+        }
+      } else {
+        result.industryTemplate = null;
+      }
+      return { ok: true, data: result };
     } catch (err) {
       // Prisma unique 제약(P2002, Tenant.phoneNumber) → phone_number_taken.
       if ((err as { code?: string }).code === "P2002") {

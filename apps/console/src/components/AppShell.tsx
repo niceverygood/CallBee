@@ -44,6 +44,7 @@ export function AppShell() {
     {
       title: "에이전트 스튜디오",
       items: [
+        { to: `${base}/studio/pack`, label: "업종 팩" },
         { to: `${base}/studio/profile`, label: "프로필" },
         { to: `${base}/studio/policy`, label: "응대 정책" },
         { to: `${base}/studio/intents`, label: "문의 유형" },

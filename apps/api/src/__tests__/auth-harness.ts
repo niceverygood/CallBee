@@ -17,7 +17,12 @@ export function makeAuthHarness() {
     th.agentConfigs,
     accounts,
   );
-  const authController = new AuthController(th.tenants, th.agentConfigs, accounts);
+  const authController = new AuthController(
+    th.tenants,
+    th.agentConfigs,
+    accounts,
+    th.industryTemplates,
+  );
 
   return { ...th, accounts, signupController, authController };
 }

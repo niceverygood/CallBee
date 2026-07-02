@@ -189,3 +189,78 @@ describe("GET /admin/tenants — 상태 필터", () => {
     expect(t.appliedAt).toBeTruthy();
   });
 });
+
+// ── 승인 시 업종 팩 자동 적용(v0.6.0) ────────────────────────────
+describe("POST /admin/tenants/:id/approve — 업종 팩 자동 적용", () => {
+  it("가입 업종에 팩이 있으면 승인 직후 자동 적용된다(의도/KB/설정 + 응답 요약)", async () => {
+    const h = makeAuthHarness();
+    const tenantId = await signupPendingTenant(h); // industryKey=restaurant_cafe
+
+    const res = await h.authController.approveTenant(tenantId, {
+      phoneNumber: "07012349999",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.industryTemplate?.packTitle).toBe("식당·카페 팩");
+    expect(res.data.industryTemplate?.createdIntentKeys).toContain("table_reservation");
+    expect(res.data.industryTemplateError).toBeUndefined();
+
+    // 저장 상태: 의도 생성 + 예시 KB 는 비활성
+    const intents = await h.intents.list(tenantId);
+    expect(intents.length).toBeGreaterThanOrEqual(5);
+    const kb = await h.knowledge.list();
+    expect(kb.some((k) => !k.enabled)).toBe(true);
+
+    // 통화 컨텍스트(resolve)에도 즉시 실린다 — 사장님이 콘솔을 열기 전 상태
+    const ctx = await h.resolver.resolveByPhoneNumber("07012349999");
+    expect(ctx?.intents.map((i) => String(i.key))).toContain("hours_holiday");
+    // 조사 자동 선택: "김윤정 파스타" 는 받침 없음 → "는"
+    expect(ctx?.agentConfig.personaInstructions).toContain("김윤정 파스타는 식당·카페입니다");
+  });
+
+  it("팩이 없는 업종(other)은 industryTemplate=null 로 승인만 성공한다", async () => {
+    const h = makeAuthHarness();
+    const signup = await h.signupController.signup({
+      ...validSignupRequest(),
+      email: "etc@biz.example.com",
+      businessName: "동네 세차장",
+      industryKey: "other",
+      industryCustomLabel: "세차장",
+    });
+    expect(signup.ok).toBe(true);
+    if (!signup.ok) return;
+
+    const res = await h.authController.approveTenant(signup.data.tenantId, {
+      phoneNumber: "07055556666",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.tenant.status).toBe("active");
+    expect(res.data.industryTemplate).toBeNull();
+    expect(res.data.industryTemplateError).toBeUndefined();
+
+    const intents = await h.intents.list(signup.data.tenantId);
+    expect(intents).toHaveLength(0);
+  });
+
+  it("자동 적용은 비파괴 — 승인 전 이미 만든 같은 key 의도는 유지된다", async () => {
+    const h = makeAuthHarness();
+    const tenantId = await signupPendingTenant(h);
+    await h.intents.create(tenantId, {
+      key: "table_reservation",
+      label: "사장님이 직접 만든 예약",
+      keywords: ["예약"],
+      sortOrder: 1,
+    });
+
+    const res = await h.authController.approveTenant(tenantId, {
+      phoneNumber: "07012340000",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.industryTemplate?.skippedIntentKeys).toContain("table_reservation");
+
+    const kept = await h.intents.findByKey(tenantId, "table_reservation");
+    expect(kept?.label).toBe("사장님이 직접 만든 예약");
+  });
+});

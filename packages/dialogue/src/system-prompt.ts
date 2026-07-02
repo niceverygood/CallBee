@@ -62,16 +62,43 @@ function renderIntentCatalog(): string {
 // buildSystemPrompt/buildTenantSystemPrompt 양쪽이 사용한다. GUARDRAIL #1/#3
 // 헬퍼는 의도적으로 agentConfig(또는 그 어떤 테넌트 설정)를 인자로 받지 않는다.
 
-function buildRoleSection(serviceName: string, agentName: string, personaExtra?: string | null): string {
-  const lines = [
+/**
+ * v1(BoBi 전용) 역할 섹션 — BoBi 서비스 설명이 하드코드된 원본.
+ * ⚠️ buildSystemPrompt() 전용. 출력 불변(system-prompt.test.ts 가 고정).
+ */
+function buildRoleSection(serviceName: string, agentName: string): string {
+  return [
     `# 역할`,
     `당신은 ${serviceName} 고객센터의 AI 상담원 "${agentName}"입니다.`,
     `${serviceName}는 보험설계사를 위한 SaaS(구독형 소프트웨어)입니다.`,
     `전화로 걸려온 ${serviceName} 유료 구독자(보험설계사)의 문의를 실시간 음성으로 응대합니다.`,
     `응대 범위는 ${serviceName}(소프트웨어) 사용 지원에 한정됩니다.`,
+  ].join("\n");
+}
+
+/**
+ * v2(멀티테넌트) 역할 섹션 — 업종/서비스 설명은 데이터(personaInstructions)가
+ * 소유한다. BoBi(테넌트 #1)의 설명도 시드 personaInstructions 로 들어오므로
+ * (seed-bobi-tenant.ts §4.2) 여기서 하드코드하지 않는다.
+ *
+ * 수정 배경: 종전에는 buildRoleSection(BoBi 하드코드)을 재사용해 모든 테넌트의
+ * 역할 섹션에 "보험설계사를 위한 SaaS" 문구가 들어가고(식당·병원 포함),
+ * BoBi 는 같은 설명이 두 번 렌더되는 버그가 있었다
+ * (system-prompt.tenant-parity.test.ts "역할 섹션" 테스트가 회귀 고정).
+ */
+function buildTenantRoleSection(
+  serviceName: string,
+  agentName: string,
+  personaInstructions?: string | null,
+): string {
+  const lines = [
+    `# 역할`,
+    `당신은 ${serviceName} 고객센터의 AI 상담원 "${agentName}"입니다.`,
   ];
-  if (personaExtra) {
-    lines.push(personaExtra);
+  if (personaInstructions?.trim()) {
+    lines.push(personaInstructions);
+  } else {
+    lines.push(`전화로 걸려온 ${serviceName} 고객의 문의를 실시간 음성으로 응대합니다.`);
   }
   return lines.join("\n");
 }
@@ -436,7 +463,11 @@ export function buildTenantSystemPrompt(ctx: TenantSystemPromptContext): string 
   const sections: string[] = [];
 
   sections.push(
-    buildRoleSection(agentConfig.serviceName, agentConfig.agentName, agentConfig.personaInstructions ?? undefined),
+    buildTenantRoleSection(
+      agentConfig.serviceName,
+      agentConfig.agentName,
+      agentConfig.personaInstructions,
+    ),
   );
 
   // v3: 영업시간 외 최상위 지시(역할 섹션 다음). businessHours 없으면 isAfterHours 무시.

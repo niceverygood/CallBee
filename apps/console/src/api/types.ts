@@ -24,6 +24,7 @@
  *   POST /tenants/:id/kb                  → KnowledgeItem
  *   PUT  /tenants/:id/kb/:kbId            → KnowledgeItem
  *   DELETE /tenants/:id/kb/:kbId          → void
+ *   POST /tenants/:id/industry-template   → ApplyIndustryTemplateResult (업종 팩 적용)
  *   GET  /tenants/:id/calls?limit&offset  → TenantCallListItem[] (v3 신규)
  *   GET  /tenants/:id/calls/:callId       → TenantCallDetail    (v3 신규)
  */
@@ -73,6 +74,11 @@ export interface KnowledgeItem {
   question: string;
   answer: string;
   tags: string[];
+  /**
+   * false = "답변을 채우고 켜기 전" 상태 — 통화 검색에서 제외된다.
+   * 업종 팩이 만드는 예시 질문이 이 상태로 생성된다(답변 입력 후 직접 켠다).
+   */
+  enabled: boolean;
   updatedAt: string;
 }
 

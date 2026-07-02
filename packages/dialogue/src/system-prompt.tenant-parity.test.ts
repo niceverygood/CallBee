@@ -195,4 +195,31 @@ describe("buildTenantSystemPrompt — 가상 테넌트(레스토랑)로 다른 �
     expect(restaurant).toContain("예약 시간과 인원수");
     expect(bobi).not.toContain("예약 시간과 인원수");
   });
+
+  // ── 역할 섹션 회귀 고정: 업종 설명은 personaInstructions(데이터)가 소유 ──
+  // 종전 버그: buildRoleSection(BoBi 하드코드) 재사용으로 모든 테넌트 역할
+  // 섹션에 "보험설계사를 위한 SaaS" 가 렌더되고, BoBi 는 같은 설명이 중복됐다.
+  it("타 업종 테넌트 프롬프트에 BoBi 설명이 하드코드되지 않는다", () => {
+    const restaurant = buildTenantSystemPrompt({
+      agentConfig: RESTAURANT_AGENT_CONFIG,
+      intents: RESTAURANT_INTENTS,
+    });
+    expect(restaurant).not.toContain("보험설계사");
+    expect(restaurant).toContain("맛있는집은 예약제로 운영되는 이탈리안 레스토랑입니다.");
+  });
+
+  it("BoBi 시드 프롬프트에 서비스 설명이 정확히 1번만 렌더된다(중복 제거)", () => {
+    const bobi = buildTenantSystemPrompt(buildBobiSeedCtx());
+    const marker = "보험설계사를 위한 SaaS";
+    expect(bobi.split(marker).length - 1).toBe(1);
+  });
+
+  it("personaInstructions 가 없으면 일반 응대 문구로 폴백한다", () => {
+    const noPersona = buildTenantSystemPrompt({
+      agentConfig: { ...RESTAURANT_AGENT_CONFIG, personaInstructions: null },
+      intents: RESTAURANT_INTENTS,
+    });
+    expect(noPersona).not.toContain("보험설계사");
+    expect(noPersona).toContain("전화로 걸려온 맛있는집 고객의 문의를 실시간 음성으로 응대합니다.");
+  });
 });

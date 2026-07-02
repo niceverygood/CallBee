@@ -13,6 +13,7 @@ import { PolicyPage } from "./pages/PolicyPage";
 import { IntentsPage } from "./pages/IntentsPage";
 import { ToolsPage } from "./pages/ToolsPage";
 import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
+import { TemplatePackPage } from "./pages/TemplatePackPage";
 import { BusinessHoursPage } from "./pages/BusinessHoursPage";
 import { CallSettingsPage } from "./pages/CallSettingsPage";
 import { SmsSettingsPage } from "./pages/SmsSettingsPage";
@@ -81,6 +82,7 @@ export function App() {
             <Route path="calls/:callId" element={<CallDetailPage />} />
             <Route path="studio">
               <Route index element={<Navigate to="profile" replace />} />
+              <Route path="pack" element={<TemplatePackPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="policy" element={<PolicyPage />} />
               <Route path="intents" element={<IntentsPage />} />
