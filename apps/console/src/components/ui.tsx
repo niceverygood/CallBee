@@ -94,7 +94,7 @@ export function Logo({ size = "base" }: { size?: "base" | "lg" }) {
     <span className="inline-flex items-center gap-2">
       <BeeMark size={size === "lg" ? 32 : 26} />
       <span
-        className={`font-extrabold tracking-tight text-ink-900 ${
+        className={`font-extrabold text-ink-900 ${
           size === "lg" ? "text-2xl" : "text-lg"
         }`}
       >

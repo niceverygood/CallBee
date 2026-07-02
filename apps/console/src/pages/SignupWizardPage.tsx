@@ -8,6 +8,7 @@ import { loginSession } from "../lib/session";
 import { useSession } from "../lib/useSession";
 import { FormField, inputCls, inputErrorCls } from "../components/FormField";
 import { Logo, btnPrimary, btnSecondary } from "../components/ui";
+import callbeeMascotUrl from "../assets/callbee-mascot.webp";
 
 /**
  * 가입 위저드 3단계 — product-spec §2.
@@ -151,74 +152,112 @@ export function SignupWizardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-ink-50 pb-16">
-      <header className="border-b border-ink-100 bg-white">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
+    <div className="min-h-screen overflow-x-hidden bg-brand-50 pb-16 text-ink-900">
+      <header className="border-b border-brand-100 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link to="/" aria-label="콜비 홈">
             <Logo />
           </Link>
-          <Link to="/login" className="text-sm font-medium text-ink-600 hover:text-ink-900">
+          <Link
+            to="/login"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-ink-600 transition hover:bg-ink-50 hover:text-ink-900"
+          >
             로그인
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 pt-10">
-        {/* 스텝퍼 */}
-        <ol className="mb-8 flex items-center justify-center gap-2 sm:gap-4" aria-label="가입 단계">
-          {STEPS.map((label, i) => (
-            <li key={label} className="flex items-center gap-2 sm:gap-4">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-bold ${
-                    i < step
-                      ? "bg-brand-400 text-ink-900"
-                      : i === step
-                        ? "bg-ink-900 text-white"
-                        : "bg-ink-200 text-ink-500"
-                  }`}
-                >
-                  {i < step ? "✓" : i + 1}
-                </span>
-                <span
-                  className={`text-[13px] ${
-                    i === step ? "font-semibold text-ink-900" : "font-medium text-ink-500"
-                  }`}
-                >
-                  {label}
-                </span>
-              </div>
-              {i < STEPS.length - 1 ? (
-                <span aria-hidden="true" className="h-px w-6 bg-ink-300 sm:w-10" />
-              ) : null}
-            </li>
-          ))}
-        </ol>
+      <main className="mx-auto grid max-w-5xl gap-6 px-6 pt-8 lg:grid-cols-[1fr_320px] lg:items-start">
+        <div>
+          <div className="mb-6 rounded-xl border border-brand-100 bg-white/80 px-5 py-4 shadow-sm">
+            <p className="text-[13px] font-semibold text-brand-800">가입은 3단계면 끝나요</p>
+            <h1 className="mt-1 text-2xl font-bold text-ink-900">콜비 시작하기</h1>
+            <p className="mt-2 text-sm leading-6 text-ink-600">
+              계정과 사업장 정보를 알려주시면 전용 전화 응대 흐름을 준비해 드려요.
+            </p>
+          </div>
 
-        <div className="rounded-xl border border-ink-200 bg-white p-6 sm:p-8">
-          {step === 0 ? (
-            <StepAccount
-              draft={draft}
-              errors={errors}
-              emailTaken={emailTaken}
-              set={set}
-              onNext={goNext}
-            />
-          ) : null}
-          {step === 1 ? (
-            <StepBusiness draft={draft} errors={errors} set={set} onNext={goNext} onBack={goBack} />
-          ) : null}
-          {step === 2 ? (
-            <StepPlan
-              draft={draft}
-              set={set}
-              onBack={goBack}
-              onSubmit={submit}
-              submitting={signup.isPending}
-              serverError={serverError}
-            />
-          ) : null}
+          <ol
+            className="mb-6 flex items-center justify-center gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-3 shadow-sm sm:gap-4"
+            aria-label="가입 단계"
+          >
+            {STEPS.map((label, i) => (
+              <li key={label} className="flex items-center gap-2 sm:gap-4">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-bold ${
+                      i < step
+                        ? "bg-brand-400 text-ink-900"
+                        : i === step
+                          ? "bg-brand-100 text-brand-800 ring-2 ring-brand-200"
+                          : "bg-ink-100 text-ink-500"
+                    }`}
+                  >
+                    {i < step ? "✓" : i + 1}
+                  </span>
+                  <span
+                    className={`hidden text-[13px] sm:inline ${
+                      i === step ? "font-semibold text-ink-900" : "font-medium text-ink-500"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {i < STEPS.length - 1 ? (
+                  <span aria-hidden="true" className="h-px w-4 bg-brand-100 sm:w-10" />
+                ) : null}
+              </li>
+            ))}
+          </ol>
+
+          <div className="rounded-xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
+            {step === 0 ? (
+              <StepAccount
+                draft={draft}
+                errors={errors}
+                emailTaken={emailTaken}
+                set={set}
+                onNext={goNext}
+              />
+            ) : null}
+            {step === 1 ? (
+              <StepBusiness
+                draft={draft}
+                errors={errors}
+                set={set}
+                onNext={goNext}
+                onBack={goBack}
+              />
+            ) : null}
+            {step === 2 ? (
+              <StepPlan
+                draft={draft}
+                set={set}
+                onBack={goBack}
+                onSubmit={submit}
+                submitting={signup.isPending}
+                serverError={serverError}
+              />
+            ) : null}
+          </div>
         </div>
+
+        <aside className="hidden overflow-hidden rounded-xl border border-brand-100 bg-white/80 p-5 shadow-sm lg:block">
+          <div className="mx-auto aspect-square max-w-[220px]">
+            <img
+              src={callbeeMascotUrl}
+              alt="가입을 안내하는 콜비 캐릭터"
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <div className="mt-4 rounded-xl bg-brand-50 px-4 py-3">
+            <p className="text-sm font-semibold text-ink-900">070 번호는 승인 후 배정돼요</p>
+            <p className="mt-1 text-[13px] leading-6 text-ink-600">
+              지금은 결제 정보 없이 신청만 받고, 승인되면 콜비가 받을 전화번호와 기본 응대
+              설정을 준비해요.
+            </p>
+          </div>
+        </aside>
       </main>
     </div>
   );
@@ -248,7 +287,7 @@ function StepAccount({
       className="space-y-4"
     >
       <div>
-        <h1 className="text-xl font-bold text-ink-900">계정을 만들어 주세요</h1>
+        <h2 className="text-xl font-bold text-ink-900">계정을 만들어 주세요</h2>
         <p className="mt-1 text-sm text-ink-500">콘솔에 로그인할 때 사용할 계정이에요.</p>
       </div>
 
@@ -329,7 +368,7 @@ function StepBusiness({
       className="space-y-4"
     >
       <div>
-        <h1 className="text-xl font-bold text-ink-900">사업장을 알려주세요</h1>
+        <h2 className="text-xl font-bold text-ink-900">사업장을 알려주세요</h2>
         <p className="mt-1 text-sm text-ink-500">
           업종에 맞춰 AI 상담원의 기본 응대를 준비해 드려요.
         </p>
@@ -395,7 +434,7 @@ function StepBusiness({
 
       <FormField
         label="사업장 연락처"
-        hint="승인 심사와 연락에 사용해요. 전화번호는 신청이 승인될 때 콜비가 배정해 드려요."
+        hint="승인 심사와 연락에 사용해요. 070 번호는 신청이 승인될 때 콜비가 배정해 드려요."
         error={errors.contactPhone}
       >
         <input
@@ -439,7 +478,7 @@ function StepPlan({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-ink-900">요금제를 골라주세요</h1>
+        <h2 className="text-xl font-bold text-ink-900">요금제를 골라주세요</h2>
         <p className="mt-1 text-sm text-ink-500">
           어떤 요금제든 14일 무료 체험으로 시작해요.
         </p>

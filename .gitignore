@@ -21,3 +21,6 @@ packages/db/prisma/migrations/**/migration_lock.toml
 .DS_Store
 coverage/
 .turbo/
+
+# AI 코딩 도구 세션 설정(Codex 등 — 로컬 전용)
+.codex/
