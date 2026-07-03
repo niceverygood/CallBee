@@ -236,6 +236,66 @@ export interface CallSessionReadRepository {
   ): Promise<TenantCallDetail | null>;
 }
 
+// ── 통화 ingest 쓰기 포트 (음성 게이트웨이 전용 — /ingest/* 라우트) ──
+/**
+ * 음성 게이트웨이(ClawOps 인바운드 프로세스)가 통화 수명주기를 기록하는 쓰기
+ * 포트. CallSessionReadRepository 와 같은 저장소(CallSession/Transcript 테이블)
+ * 를 바라봐야 콘솔 GET /tenants/:id/calls 가 ingest 로 만든 세션을 그대로
+ * 읽는다(인메모리 구현은 단일 인스턴스 공유로 이를 보장 — tenant.module.ts).
+ */
+export interface IngestCallSessionRef {
+  callSessionId: string;
+  tenantId: TenantId;
+}
+
+export interface CreateCallSessionInput {
+  /** ClawOps 콜 식별자(외부) — CallSession.clawopsCallId unique. 멱등 키. */
+  clawopsCallId: string;
+  /** 수신 070 번호(테넌트 라우팅 키) */
+  toNumber: string;
+  /** 발신번호(E.164) */
+  fromNumber: string;
+  /** ISO8601 */
+  startedAt: string;
+}
+
+export interface AppendTranscriptInput {
+  role: SpeakerRole;
+  /** ⚠️ 저장 전 @colli/compliance maskPII 를 통과한 텍스트만 넘길 것(컨트롤러 책임). */
+  text: string;
+  /** 통화 시작 기준 세그먼트 오프셋(ms) */
+  startMs?: number | null;
+}
+
+export interface CompleteCallSessionInput {
+  /** ISO8601 */
+  endedAt: string;
+  durationSec: number;
+  outcome?: CallOutcome | null;
+  summary?: string | null;
+  recordingUrl?: string | null;
+}
+
+export interface CallSessionIngestRepository {
+  /** clawopsCallId 로 기존 세션 조회(멱등 생성 판정용). 없으면 null. */
+  findByClawopsCallId(clawopsCallId: string): Promise<IngestCallSessionRef | null>;
+  /** CallSession 생성(tenantId 스코프). clawopsCallId 충돌(동시 요청) 시 기존 세션을 반환한다. */
+  create(
+    tenantId: TenantId,
+    input: CreateCallSessionInput,
+  ): Promise<{ callSessionId: string }>;
+  /** Transcript 1건 append. 세션이 없으면 null. */
+  appendTranscript(
+    callSessionId: string,
+    input: AppendTranscriptInput,
+  ): Promise<{ transcriptId: string } | null>;
+  /** 세션 마감 업데이트. 세션이 없으면 false. */
+  complete(
+    callSessionId: string,
+    input: CompleteCallSessionInput,
+  ): Promise<boolean>;
+}
+
 // ── webhook tool 실행기 ─────────────────────────────────────────
 export interface WebhookInvokeRequest {
   tenantId: TenantId;

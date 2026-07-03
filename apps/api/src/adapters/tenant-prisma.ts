@@ -47,6 +47,11 @@ import type {
   ListTenantCallsOptions,
   TenantCallListItem,
   TenantCallDetail,
+  CallSessionIngestRepository,
+  IngestCallSessionRef,
+  CreateCallSessionInput,
+  AppendTranscriptInput,
+  CompleteCallSessionInput,
 } from "../tenant.ports.js";
 
 type Db = typeof prisma;
@@ -488,6 +493,88 @@ export class PrismaCallSessionReadRepository implements CallSessionReadRepositor
       })),
       toolInvocations: rec.toolInvocations.map((t) => t.toolName),
     };
+  }
+}
+
+// ── 통화 ingest 쓰기(음성 게이트웨이 /ingest/* 라우트) ────────────
+/**
+ * CallSessionIngestRepository Prisma 구현. PrismaCallSessionReadRepository 와
+ * 같은 CallSession/Transcript 테이블에 쓰므로 콘솔 통화 기록 라우트가 ingest
+ * 세션을 그대로 읽는다. clawopsCallId unique 를 멱등 키로 쓴다.
+ */
+export class PrismaCallSessionIngestRepository implements CallSessionIngestRepository {
+  constructor(private readonly db: Db = prisma) {}
+
+  async findByClawopsCallId(
+    clawopsCallId: string,
+  ): Promise<IngestCallSessionRef | null> {
+    const rec = await this.db.callSession.findUnique({ where: { clawopsCallId } });
+    return rec ? { callSessionId: rec.id, tenantId: rec.tenantId as TenantId } : null;
+  }
+
+  async create(
+    tenantId: TenantId,
+    input: CreateCallSessionInput,
+  ): Promise<{ callSessionId: string }> {
+    try {
+      const rec = await this.db.callSession.create({
+        data: {
+          tenantId,
+          clawopsCallId: input.clawopsCallId,
+          fromNumber: input.fromNumber,
+          toNumber: input.toNumber,
+          startedAt: new Date(input.startedAt),
+        },
+      });
+      return { callSessionId: rec.id };
+    } catch (err) {
+      // 동시 요청 레이스: clawopsCallId unique 충돌이면 기존 세션 반환(멱등).
+      const existing = await this.findByClawopsCallId(input.clawopsCallId);
+      if (existing) return { callSessionId: existing.callSessionId };
+      throw err;
+    }
+  }
+
+  async appendTranscript(
+    callSessionId: string,
+    input: AppendTranscriptInput,
+  ): Promise<{ transcriptId: string } | null> {
+    const session = await this.db.callSession.findUnique({
+      where: { id: callSessionId },
+      select: { id: true },
+    });
+    if (!session) return null;
+    const rec = await this.db.transcript.create({
+      data: {
+        callSessionId,
+        role: input.role,
+        text: input.text, // 컨트롤러에서 maskPII 통과한 텍스트만 도달한다
+        startMs: input.startMs ?? null,
+      },
+    });
+    return { transcriptId: rec.id };
+  }
+
+  async complete(
+    callSessionId: string,
+    input: CompleteCallSessionInput,
+  ): Promise<boolean> {
+    const session = await this.db.callSession.findUnique({
+      where: { id: callSessionId },
+      select: { id: true },
+    });
+    if (!session) return false;
+    await this.db.callSession.update({
+      where: { id: callSessionId },
+      data: {
+        endedAt: new Date(input.endedAt),
+        durationSec: input.durationSec,
+        ...(input.outcome !== undefined && { outcome: input.outcome }),
+        ...(input.summary !== undefined && { summary: input.summary }),
+        ...(input.recordingUrl !== undefined && { recordingUrl: input.recordingUrl }),
+      },
+    });
+    return true;
   }
 }
 

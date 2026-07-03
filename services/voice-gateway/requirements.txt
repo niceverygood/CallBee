@@ -1,0 +1,5 @@
+# 콜비 voice-gateway 의존성 (Python 3.11+)
+# httpx/aiohttp/websockets/openai 는 clawops extras 가 함께 설치한다.
+clawops[agent,openai]==0.31.0
+python-dotenv>=1.0
+certifi>=2024.2.2

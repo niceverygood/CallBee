@@ -22,6 +22,9 @@ import {
   type CustomToolJsonSchema,
   type ToolJsonSchemaBase,
 } from "@colli/contracts";
+// 프롬프트 조립은 @colli/dialogue 단일 소스만 사용한다(가드레일 섹션이 코드로
+// 강제되는 buildTenantSystemPrompt — 여기서 자체 조립/복제 금지).
+import { buildTenantSystemPrompt, isWithinBusinessHours } from "@colli/dialogue";
 import type {
   TenantRepository,
   TenantAgentConfigRepository,
@@ -34,6 +37,11 @@ export interface TenantResolverDeps {
   agentConfigs: TenantAgentConfigRepository;
   intents: TenantIntentRepository;
   customTools: CustomToolRepository;
+  /**
+   * 영업시간 판정(v3)용 현재 시각 주입점 — 테스트 결정성을 위한 옵션.
+   * 미지정이면 실제 현재 시각(new Date())을 쓴다.
+   */
+  now?: () => Date;
 }
 
 /**
@@ -116,11 +124,22 @@ export class TenantResolverService {
         (s) => s.kind === "system" || !systemNames.has(s.name),
       );
 
+    // 완성 시스템 프롬프트(@colli/dialogue 단일 소스). 영업시간(v3) 판정은
+    // resolve 시점 = 통화 수신 시점 기준. consent/identity 는 통화 초입이므로
+    // 항상 미완료(false) — 기본값 그대로 둔다.
+    const now = this.deps.now ? this.deps.now() : new Date();
+    const systemPrompt = buildTenantSystemPrompt({
+      agentConfig,
+      intents,
+      isAfterHours: !isWithinBusinessHours(agentConfig.businessHours ?? null, now),
+    });
+
     return {
       tenant,
       agentConfig,
       intents,
       toolSchemas,
+      systemPrompt,
     };
   }
 }

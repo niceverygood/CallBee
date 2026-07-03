@@ -15,6 +15,7 @@
 import { Module, type Provider } from "@nestjs/common";
 import { TenantsController } from "./tenants.controller.js";
 import { OnboardingController } from "./onboarding.controller.js";
+import { IngestController } from "./ingest.controller.js";
 import { TenantResolverService } from "./tenant-resolver.service.js";
 import {
   IndustryTemplateService,
@@ -33,6 +34,7 @@ import {
   TRACE_PORT,
   KNOWLEDGE_REPO,
   CALL_SESSION_READ_REPO,
+  CALL_SESSION_INGEST_REPO,
 } from "./tokens.js";
 import {
   InMemoryTenantRepository,
@@ -48,6 +50,7 @@ import {
   PrismaTenantIntentRepository,
   PrismaCustomToolRepository,
   PrismaCallSessionReadRepository,
+  PrismaCallSessionIngestRepository,
 } from "./adapters/tenant-prisma.js";
 import { InMemoryTrace, InMemoryKnowledgeRepository } from "./adapters/in-memory.js";
 import type {
@@ -66,6 +69,9 @@ const inMemoryPortProviders: Provider[] = [
   { provide: TENANT_INTENT_REPO, useClass: InMemoryTenantIntentRepository },
   { provide: CUSTOM_TOOL_REPO, useClass: InMemoryCustomToolRepository },
   { provide: CALL_SESSION_READ_REPO, useClass: InMemoryCallSessionReadRepository },
+  // ingest(쓰기)와 read(콘솔 열람)가 반드시 **같은 인스턴스**를 공유해야
+  // 게이트웨이가 기록한 통화가 콘솔 통화 기록에 그대로 보인다(useExisting).
+  { provide: CALL_SESSION_INGEST_REPO, useExisting: CALL_SESSION_READ_REPO },
   { provide: WEBHOOK_TOOL_INVOKER, useClass: InMemoryWebhookToolInvoker },
   // ToolsModule 이 이미 TRACE_PORT/KNOWLEDGE_REPO 를 바인딩하지만, TenantModule 을
   // 단독으로도 부트스트랩할 수 있도록 기본값을 여기서도 제공한다(NestJS 는
@@ -93,6 +99,8 @@ const prismaPortProviders: Provider[] = [
   { provide: TENANT_INTENT_REPO, useClass: PrismaTenantIntentRepository },
   { provide: CUSTOM_TOOL_REPO, useClass: PrismaCustomToolRepository },
   { provide: CALL_SESSION_READ_REPO, useClass: PrismaCallSessionReadRepository },
+  // ingest/read 는 같은 CallSession/Transcript 테이블을 쓰므로 인스턴스 분리 무방.
+  { provide: CALL_SESSION_INGEST_REPO, useClass: PrismaCallSessionIngestRepository },
   // 실HTTP webhook invoker 는 이번 범위 밖 — 인메모리 목을 그대로 사용.
   { provide: WEBHOOK_TOOL_INVOKER, useClass: InMemoryWebhookToolInvoker },
   { provide: TRACE_PORT, useClass: InMemoryTrace },
@@ -145,7 +153,8 @@ const customToolExecutorProvider: Provider = {
   // TenantsController/OnboardingController 는 각 포트를 @Inject(TOKEN)
   // 데코레이터로 직접 주입받으므로(인터페이스 타입은 런타임에 없어 NestJS 가
   // 자동으로 해석할 수 없음) 표준 `controllers` 배열에 그대로 등록한다.
-  controllers: [TenantsController, OnboardingController],
+  // IngestController 는 음성 게이트웨이 전용(GatewayGuard 고정 시크릿 인증).
+  controllers: [TenantsController, OnboardingController, IngestController],
   providers: [
     ...defaultPortProviders,
     resolverProvider,

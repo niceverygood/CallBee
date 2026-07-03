@@ -22,3 +22,6 @@ export const ADMIN_ACCOUNT_REPO = Symbol("AdminAccountRepository");
 
 // ── v3(테넌트 통화 기록 열람) 신규 포트 토큰 ─────────────────────
 export const CALL_SESSION_READ_REPO = Symbol("CallSessionReadRepository");
+
+// ── v4(음성 게이트웨이 통화 ingest) 신규 포트 토큰 ───────────────
+export const CALL_SESSION_INGEST_REPO = Symbol("CallSessionIngestRepository");

@@ -10,7 +10,7 @@
  * tenantId 스코프가 필수이기 때문. 시스템 tool 호출 시 x-tenant-id 는 아직
  * ToolsService 내부 쿼리에서 사용하지 않는다(변경 없음 원칙 유지).
  */
-import { Body, Controller, Headers, Param, Post } from "@nestjs/common";
+import { Body, Controller, Headers, Inject, Optional, Param, Post } from "@nestjs/common";
 import {
   TOOL_NAMES,
   type TenantId,
@@ -27,12 +27,14 @@ import {
 
 @Controller("tools")
 export class ToolsController {
+  // tsx 실행은 decorator metadata 를 방출하지 않아 타입 기반 자동 해석이 안 된다 —
+  // TenantsController 의 TenantResolverService 와 동일한 이유로 명시적 @Inject 필수.
   constructor(
-    private readonly tools: ToolsService,
+    @Inject(ToolsService) private readonly tools: ToolsService,
     // 기존 tools.controller.test.ts(4개)가 단일 인자로 직접 인스턴스화하므로
     // 하위호환을 위해 optional 로 둔다. 실제 통합 배선(ToolsModule)에서는
     // 항상 CustomToolExecutor 를 DI 주입한다.
-    private readonly customTools?: CustomToolExecutor,
+    @Optional() @Inject(CustomToolExecutor) private readonly customTools?: CustomToolExecutor,
   ) {}
 
   @Post(":name")

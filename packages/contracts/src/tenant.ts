@@ -474,6 +474,14 @@ export interface ResolvedTenantAgentContext {
   intents: TenantIntentDefinition[];
   /** 시스템 tool(TOOL_SCHEMA_LIST, 항상 전체 포함) + 테넌트 커스텀 tool(enabled 만) 병합 목록 */
   toolSchemas: Array<ToolJsonSchemaBase & { kind: "system" | "custom" }>;
+  /**
+   * @colli/dialogue 의 buildTenantSystemPrompt(agentConfig+intents, v3 영업시간
+   * 판정 포함)로 resolve 시점에 완성 조립된 시스템 프롬프트. 음성 게이트웨이는
+   * 이 문자열을 그대로 LLM 세션 system 지시로 주입하면 된다(프롬프트 조립을
+   * 게이트웨이에 복제하지 않는다 — 가드레일 섹션은 dialogue 가 코드로 강제).
+   * 옵셔널(하위호환): 구버전 apps/api 응답에는 없을 수 있다.
+   */
+  systemPrompt?: string;
 }
 
 /**

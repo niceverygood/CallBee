@@ -29,6 +29,11 @@ import type {
   TenantCallListItem,
   TenantCallDetail,
   ListTenantCallsOptions,
+  CallSessionIngestRepository,
+  IngestCallSessionRef,
+  CreateCallSessionInput,
+  AppendTranscriptInput,
+  CompleteCallSessionInput,
 } from "../tenant.ports.js";
 import type { TenantAgentConfig as TenantAgentConfigContract } from "@colli/contracts";
 
@@ -331,15 +336,20 @@ export class InMemoryCustomToolRepository implements CustomToolRepository {
   }
 }
 
-// ── 테넌트 통화 기록 읽기 인메모리 ──────────────────────────────
+// ── 테넌트 통화 기록 읽기+ingest 인메모리 ───────────────────────
 /**
- * CallSessionReadRepository 인메모리 구현(테스트/데모용).
- * 테스트가 `seed(tenantId, detail)` 로 통화 기록을 심은 뒤 목록/상세를 검증한다.
+ * CallSessionReadRepository + CallSessionIngestRepository 인메모리 구현
+ * (테스트/데모용). 읽기/쓰기가 같은 store 를 공유하므로, 게이트웨이 ingest 로
+ * 만든 세션을 콘솔 통화 기록 라우트가 그대로 읽는다(라이브의 "같은 테이블"
+ * 동작과 정합). 테스트는 `seed(tenantId, detail)` 로도 직접 심을 수 있다.
  * 목록은 startedAt desc(최신순) 고정 정렬, limit 기본 50.
  */
-export class InMemoryCallSessionReadRepository implements CallSessionReadRepository {
+export class InMemoryCallSessionReadRepository
+  implements CallSessionReadRepository, CallSessionIngestRepository
+{
   private byTenant = new Map<string, TenantCallDetail[]>();
   private nextId = idGen("call");
+  private nextTranscriptId = idGen("tr");
 
   /** 테스트/데모용 시드. id 를 생략하면 자동 발급한다. */
   seed(
@@ -378,6 +388,86 @@ export class InMemoryCallSessionReadRepository implements CallSessionReadReposit
     const list = this.byTenant.get(tenantId) ?? [];
     const found = list.find((c) => c.id === callId);
     return found ? { ...found, transcript: [...found.transcript] } : null;
+  }
+
+  // ── CallSessionIngestRepository (음성 게이트웨이 쓰기 경로) ──────
+
+  /** 전 테넌트를 스캔해 세션 참조를 찾는다(테스트 규모에서 충분). */
+  private findRefById(callSessionId: string): {
+    tenantId: string;
+    detail: TenantCallDetail;
+  } | null {
+    for (const [tenantId, list] of this.byTenant) {
+      const detail = list.find((c) => c.id === callSessionId);
+      if (detail) return { tenantId, detail };
+    }
+    return null;
+  }
+
+  async findByClawopsCallId(
+    clawopsCallId: string,
+  ): Promise<IngestCallSessionRef | null> {
+    for (const [tenantId, list] of this.byTenant) {
+      const found = list.find((c) => c.clawOpsCallId === clawopsCallId);
+      if (found) return { callSessionId: found.id, tenantId: tenantId as TenantId };
+    }
+    return null;
+  }
+
+  async create(
+    tenantId: TenantId,
+    input: CreateCallSessionInput,
+  ): Promise<{ callSessionId: string }> {
+    // 멱등: 동시 요청/재시도로 같은 clawopsCallId 가 또 오면 기존 세션 반환.
+    const existing = await this.findByClawopsCallId(input.clawopsCallId);
+    if (existing) return { callSessionId: existing.callSessionId };
+    const detail = this.seed(tenantId, {
+      clawOpsCallId: input.clawopsCallId,
+      from: input.fromNumber,
+      to: input.toNumber,
+      direction: "inbound",
+      intent: null,
+      emotion: null,
+      outcome: null,
+      subscriberId: null,
+      subscriberName: null,
+      startedAt: input.startedAt,
+      durationSec: 0,
+      recordingUrl: null,
+      summary: null,
+      transcript: [],
+      toolInvocations: [],
+    });
+    return { callSessionId: detail.id };
+  }
+
+  async appendTranscript(
+    callSessionId: string,
+    input: AppendTranscriptInput,
+  ): Promise<{ transcriptId: string } | null> {
+    const ref = this.findRefById(callSessionId);
+    if (!ref) return null;
+    ref.detail.transcript.push({
+      role: input.role,
+      text: input.text,
+      atSec: input.startMs != null ? Math.round(input.startMs / 1000) : 0,
+    });
+    return { transcriptId: this.nextTranscriptId() };
+  }
+
+  async complete(
+    callSessionId: string,
+    input: CompleteCallSessionInput,
+  ): Promise<boolean> {
+    const ref = this.findRefById(callSessionId);
+    if (!ref) return false;
+    ref.detail.durationSec = input.durationSec;
+    if (input.outcome !== undefined) ref.detail.outcome = input.outcome;
+    if (input.summary !== undefined) ref.detail.summary = input.summary;
+    if (input.recordingUrl !== undefined) ref.detail.recordingUrl = input.recordingUrl;
+    // endedAt 은 읽기 뷰모델(TenantCallDetail)에 없는 필드 — 인메모리는 보관하지
+    // 않는다(라이브 Prisma 구현은 CallSession.endedAt 컬럼에 저장).
+    return true;
   }
 }
 

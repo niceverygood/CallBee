@@ -18,16 +18,16 @@
       "runtimeExecutable": "env",
       "runtimeArgs": [
         "VITE_DATA_SOURCE=fetch",
-        "VITE_API_BASE_URL=http://localhost:3002",
+        "VITE_API_BASE_URL=http://localhost:3001",
         "pnpm",
         "--filter",
         "@colli/console",
         "exec",
         "vite",
         "--port",
-        "5176"
+        "5178"
       ],
-      "port": 5176
+      "port": 5178
     },
     {
       "name": "admin-fetch",
