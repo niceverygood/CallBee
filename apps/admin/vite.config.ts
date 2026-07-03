@@ -11,5 +11,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    // 테스트는 개발자 로컬 .env.local 과 무관하게 항상 fixture 모드로 돈다.
+    env: { VITE_DATA_SOURCE: "fixture" },
   },
 });

@@ -12,6 +12,38 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@colli/admin", "dev"],
       "port": 5174
+    },
+    {
+      "name": "console-fetch",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_DATA_SOURCE=fetch",
+        "VITE_API_BASE_URL=http://localhost:3002",
+        "pnpm",
+        "--filter",
+        "@colli/console",
+        "exec",
+        "vite",
+        "--port",
+        "5176"
+      ],
+      "port": 5176
+    },
+    {
+      "name": "admin-fetch",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_DATA_SOURCE=fetch",
+        "VITE_API_BASE_URL=http://localhost:3002",
+        "pnpm",
+        "--filter",
+        "@colli/admin",
+        "exec",
+        "vite",
+        "--port",
+        "5177"
+      ],
+      "port": 5177
     }
   ]
 }

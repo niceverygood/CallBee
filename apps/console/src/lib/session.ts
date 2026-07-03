@@ -6,8 +6,9 @@
  * 여기서 현재 테넌트 ID/토큰을 읽는다. DEFAULT_TENANT_ID 하드코딩을 대체하는
  * 실제 메커니즘이 바로 이 모듈이다.
  *
- * tenant_admin 역할만 저장을 허용한다 — platform_admin 계정으로 로그인을
- * 시도하면 client.ts/LoginPage 단에서 걸러내고 여기엔 절대 저장하지 않는다.
+ * tenant_admin(사업장)과 platform_admin(총괄관리자) 모두 여기 저장된다 —
+ * 도착지 분기는 LoginPage(역할별 리다이렉트)와 RequirePlatformAdmin 가드가
+ * 담당한다. platform_admin 세션은 tenantId 가 null 이다.
  */
 import type { AdminAccountSummary } from "@colli/contracts";
 

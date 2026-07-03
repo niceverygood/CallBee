@@ -9,9 +9,9 @@ import { FormField, inputCls } from "../components/FormField";
 import { Logo, btnPrimary } from "../components/ui";
 
 /**
- * 콘솔(사업장 관리자) 전용 로그인 화면.
- * 총괄관리자(platform_admin) 계정으로 로그인을 시도하면 거부하고 관리자 앱을
- * 안내한다(역할 스왑 방지 — apps/admin 은 반대로 tenant_admin 을 거부한다).
+ * 콜비 통합 로그인 화면 — 계정 역할에 따라 도착지가 갈린다.
+ * - tenant_admin: 자기 사업장 대시보드(/tenants/:id/dashboard)
+ * - platform_admin: 총괄관리자 화면(/admin) — 별도 관리자 앱 없이 콘솔 통합
  */
 export function LoginPage() {
   const [email, setEmail] = useState("");
@@ -22,9 +22,17 @@ export function LoginPage() {
   const session = useSession();
 
   // 로그인 성공 시 loginSession() 이 세션 pub/sub 을 갱신 → 이 컴포넌트가
-  // useSession() 구독으로 재렌더되어 여기서 리다이렉트한다(이 라우트는
+  // useSession() 구독으로 재렌더되어 여기서 역할별로 리다이렉트한다(이 라우트는
   // RequireAuth 밖에 있어 별도 처리가 필요하다).
-  if (session) return <Navigate to="/" replace />;
+  if (session) {
+    const dest =
+      session.account.role === "platform_admin"
+        ? "/admin"
+        : session.account.tenantId
+          ? `/tenants/${session.account.tenantId}/dashboard`
+          : "/";
+    return <Navigate to={dest} replace />;
+  }
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -34,10 +42,10 @@ export function LoginPage() {
       { email: email.trim(), password },
       {
         onSuccess: (res) => {
-          if (res.account.role !== "tenant_admin" || !res.account.tenantId) {
-            setRoleError(
-              "총괄관리자 계정이에요. 이 계정은 관리자 앱에서 로그인해 주세요.",
-            );
+          // platform_admin 도 여기서 로그인한다(→ /admin). tenant_admin 인데
+          // 연결된 사업장이 없는 비정상 계정만 차단한다.
+          if (res.account.role === "tenant_admin" && !res.account.tenantId) {
+            setRoleError("계정에 연결된 사업장이 없어요. 콜비에 문의해 주세요.");
             return;
           }
           loginSession({ token: res.token, account: res.account });

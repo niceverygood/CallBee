@@ -7,11 +7,39 @@
 import "dotenv/config";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import type { INestApplication } from "@nestjs/common";
 import { AppModule } from "./app.module.js";
+import { ADMIN_ACCOUNT_REPO } from "./tokens.js";
+import type { AdminAccountRepository } from "./auth/auth.repository.js";
+import { hashPassword } from "./auth/password.js";
+
+/**
+ * env 기반 총괄관리자 계정 시드(멱등). 콘솔 통합 후 platform_admin 로그인이
+ * 유일한 관리자 진입 경로라, 특히 인메모리 모드(계정 저장소가 비어 시작)에서
+ * 이 시드 없이는 승인 플로우를 돌릴 수 없다. 이미 있는 이메일이면 건너뛴다.
+ * (라이브 Postgres 는 packages/db 의 seed-platform-admin.ts 로도 가능.)
+ */
+async function seedPlatformAdminFromEnv(app: INestApplication): Promise<void> {
+  const email = process.env.DEV_PLATFORM_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.DEV_PLATFORM_ADMIN_PASSWORD;
+  if (!email || !password) return;
+
+  const accounts = app.get<AdminAccountRepository>(ADMIN_ACCOUNT_REPO);
+  if (await accounts.findByEmail(email)) return;
+  await accounts.create({
+    email,
+    passwordHash: hashPassword(password),
+    role: "platform_admin",
+    tenantId: null,
+  });
+  // eslint-disable-next-line no-console
+  console.log(`[@colli/api] platform_admin seeded from env: ${email}`);
+}
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+  await seedPlatformAdminFromEnv(app);
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console

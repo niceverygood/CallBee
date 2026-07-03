@@ -12,15 +12,17 @@ BoBi(보험설계사 SaaS) 고객센터는 이 플랫폼의 **테넌트 #1** 로
 
 ## 구조 (pnpm 모노레포)
 
-| 위치 | 패키지 | 소유 | 상태 |
+| 위치 | 패키지 | 설명 | 상태 |
 |---|---|---|---|
-| `packages/contracts` | `@colli/contracts` | Orchestrator | ✅ 완성 (단일 소스) |
-| `packages/db` | `@colli/db` | Orchestrator | ✅ Prisma 스키마 + 클라이언트 |
-| `apps/voice` | `@colli/voice` | Worker A | 🔲 스텁 |
-| `apps/api` | `@colli/api` | Worker C(+B) | 🔲 스텁 |
-| `apps/admin` | `@colli/admin` | Worker E | 🔲 스텁 |
-| `services/notifications` | `@colli/notifications` | Worker D | 🔲 스텁 |
-| `services/compliance` | `@colli/compliance` | Worker F | 🔲 스텁 |
+| `packages/contracts` | `@colli/contracts` | 공유 계약(단일 소스) | ✅ |
+| `packages/db` | `@colli/db` | Prisma 스키마 + 클라이언트 | ✅ |
+| `packages/dialogue` | `@colli/dialogue` | 대화 정책·system prompt 합성 | ✅ |
+| `apps/console` | `@colli/console` | **메인 진입점** — 랜딩/가입/사업장 콘솔 + `/admin` 총괄관리자(platform_admin 로그인 시) | ✅ |
+| `apps/api` | `@colli/api` | NestJS tools/테넌트/인증 API | ✅ |
+| `apps/voice` | `@colli/voice` | ClawOps 인바운드 세션 핸들러 | ✅ |
+| `apps/admin` | `@colli/admin` | ⚠️ deprecated — 콘솔 `/admin` 으로 통합(배포 불필요) | 🗄 |
+| `services/notifications` | `@colli/notifications` | 카카오 알림톡 어댑터 | ✅ |
+| `services/compliance` | `@colli/compliance` | 고지·동의·PII 가드 | ✅ |
 
 ## 개발 환경
 

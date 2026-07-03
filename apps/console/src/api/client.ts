@@ -525,7 +525,8 @@ interface ApiEnvelope<T> {
   error?: { code: string; message: string };
 }
 
-async function http<T>(path: string, init?: RequestInit): Promise<T> {
+// adminApi.ts(총괄관리자 화면)가 같은 봉투/인증 처리를 재사용한다.
+export async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {

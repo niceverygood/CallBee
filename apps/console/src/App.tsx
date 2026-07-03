@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { RequireAuth } from "./components/RequireAuth";
+import { RequirePlatformAdmin } from "./components/RequirePlatformAdmin";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { KakaoCallbackPage } from "./pages/KakaoCallbackPage";
@@ -15,6 +16,7 @@ import { IntentsPage } from "./pages/IntentsPage";
 import { ToolsPage } from "./pages/ToolsPage";
 import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { TemplatePackPage } from "./pages/TemplatePackPage";
+import { AdminTenantsPage } from "./pages/AdminTenantsPage";
 import { BusinessHoursPage } from "./pages/BusinessHoursPage";
 import { CallSettingsPage } from "./pages/CallSettingsPage";
 import { SmsSettingsPage } from "./pages/SmsSettingsPage";
@@ -75,6 +77,11 @@ export function App() {
       <Route path="signup" element={<SignupWizardPage />} />
       <Route path="onboarding" element={<Navigate to="/signup" replace />} />
       <Route path="pending" element={<PendingApprovalPage />} />
+      {/* 총괄관리자 — 별도 앱 없이 콘솔 통합. platform_admin 계정으로
+          로그인했을 때만 열린다(가드 참조). */}
+      <Route element={<RequirePlatformAdmin />}>
+        <Route path="admin" element={<AdminTenantsPage />} />
+      </Route>
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="tenants/:tenantId" element={<TenantScope />}>
