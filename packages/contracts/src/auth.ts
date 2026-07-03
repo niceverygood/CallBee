@@ -50,6 +50,18 @@ export interface LoginResponse {
 }
 
 /**
+ * 카카오 로그인 콜백 코드 교환 요청 — POST /auth/kakao/callback.
+ * 콘솔 프론트가 Kakao OAuth redirect 로 받은 code 를 백엔드에 전달하면,
+ * 백엔드는 서버 보관 REST API key/client secret 으로 토큰을 교환하고
+ * 카카오 계정 이메일과 기존 tenant_admin 계정을 매칭한다.
+ */
+export interface KakaoLoginCallbackRequest {
+  code: string;
+  /** Kakao Developers 에 등록된 Redirect URI. 코드 발급 때 사용한 값과 같아야 한다. */
+  redirectUri: string;
+}
+
+/**
  * 콜비 총괄관리자가 신규 테넌트를 만들면서 그 테넌트의 첫 tenant_admin 계정도
  * 함께 발급하는 요청. apps/console 의 자기 온보딩(OnboardingDraft, 계정 없이
  * 신청만 접수)과 달리, 이건 platform_admin 전용이고 즉시 로그인 가능한 계정을

@@ -33,5 +33,7 @@ export * from "./korean.js";
  * industryTemplateError optional 추가) + 한국어 조사 유틸(korean.ts 신규 —
  * 팩 문구 "{업체명}은(는)" 치환이 상호명 받침에 맞는 조사를 고른다).
  * 기존 export 전부 유지되는 non-breaking 추가.
+ * 0.7.0: 카카오 로그인 콜백 계약(KakaoLoginCallbackRequest) 추가. 기존
+ * 이메일 로그인/가입 계약은 유지되는 non-breaking 추가.
  */
-export const CONTRACTS_VERSION = "0.6.0" as const;
+export const CONTRACTS_VERSION = "0.7.0" as const;

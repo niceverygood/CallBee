@@ -21,6 +21,7 @@ import {
   type ApproveTenantRequest,
   type CreateTenantAccountRequest,
   type CreateTenantAccountResult,
+  type KakaoLoginCallbackRequest,
   type LoginRequest,
   type LoginResponse,
   type RejectTenantRequest,
@@ -60,6 +61,123 @@ function toAccountSummary(rec: AdminAccountRecord): AdminAccountSummary {
   };
 }
 
+const KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token";
+const KAKAO_USER_ME_URL = "https://kapi.kakao.com/v2/user/me";
+const DEFAULT_KAKAO_REDIRECT_URI = "http://localhost:5175/auth/kakao/callback";
+
+interface KakaoTokenResponse {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+}
+
+interface KakaoUserMeResponse {
+  id?: number;
+  kakao_account?: {
+    email?: string;
+  };
+  msg?: string;
+}
+
+function kakaoRestApiKey(): string | null {
+  return (process.env.KAKAO_REST_API_KEY ?? process.env.KAKAO_CLIENT_ID ?? "").trim() || null;
+}
+
+function kakaoClientSecret(): string | null {
+  return (process.env.KAKAO_CLIENT_SECRET ?? "").trim() || null;
+}
+
+function allowedKakaoRedirectUris(): string[] {
+  const configured = (process.env.KAKAO_REDIRECT_URIS ?? process.env.KAKAO_REDIRECT_URI ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  if (configured.length > 0) return configured;
+
+  const consoleBase = (process.env.CONSOLE_BASE_URL ?? "").trim().replace(/\/$/, "");
+  return consoleBase
+    ? [`${consoleBase}/auth/kakao/callback`]
+    : [DEFAULT_KAKAO_REDIRECT_URI];
+}
+
+function assertAllowedKakaoRedirectUri(redirectUri: string): void {
+  if (!allowedKakaoRedirectUris().includes(redirectUri)) {
+    throw new WebhookValidationError(
+      "invalid_params",
+      "등록되지 않은 Kakao redirectUri 입니다",
+    );
+  }
+}
+
+async function parseKakaoJson<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function exchangeKakaoCodeForAccessToken(input: {
+  code: string;
+  redirectUri: string;
+}): Promise<string> {
+  const clientId = kakaoRestApiKey();
+  if (!clientId) {
+    throw new WebhookValidationError(
+      "kakao_not_configured",
+      "KAKAO_REST_API_KEY 환경변수가 필요합니다",
+    );
+  }
+
+  const form = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: clientId,
+    redirect_uri: input.redirectUri,
+    code: input.code,
+  });
+  const secret = kakaoClientSecret();
+  if (secret) form.set("client_secret", secret);
+
+  const res = await fetch(KAKAO_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
+    body: form.toString(),
+  });
+  const body = await parseKakaoJson<KakaoTokenResponse>(res);
+  if (!res.ok || !body?.access_token) {
+    throw new WebhookValidationError(
+      "kakao_token_failed",
+      body?.error_description ?? body?.error ?? "카카오 토큰 교환에 실패했습니다",
+    );
+  }
+  return body.access_token;
+}
+
+async function fetchKakaoAccountEmail(accessToken: string): Promise<string> {
+  const res = await fetch(KAKAO_USER_ME_URL, {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/x-www-form-urlencoded;charset=utf-8",
+    },
+  });
+  const body = await parseKakaoJson<KakaoUserMeResponse>(res);
+  if (!res.ok) {
+    throw new WebhookValidationError(
+      "kakao_userinfo_failed",
+      body?.msg ?? "카카오 사용자 정보 조회에 실패했습니다",
+    );
+  }
+
+  const email = body?.kakao_account?.email?.trim().toLowerCase();
+  if (!email) {
+    throw new WebhookValidationError(
+      "kakao_email_required",
+      "카카오 계정 이메일 제공 동의가 필요합니다",
+    );
+  }
+  return email;
+}
+
 @Controller()
 export class AuthController {
   constructor(
@@ -89,6 +207,43 @@ export class AuthController {
           error: { code: "invalid_credentials", message: "email 또는 password 가 올바르지 않습니다" },
         };
       }
+      const summary = toAccountSummary(account);
+      const token = signToken({
+        accountId: summary.accountId,
+        role: summary.role,
+        tenantId: summary.tenantId,
+      });
+      return { ok: true, data: { account: summary, token } };
+    } catch (err) {
+      return errResult(err);
+    }
+  }
+
+  @Post("auth/kakao/callback")
+  async kakaoLogin(
+    @Body() body: KakaoLoginCallbackRequest,
+  ): Promise<ApiResult<LoginResponse>> {
+    try {
+      const code = (body.code ?? "").trim();
+      const redirectUri = (body.redirectUri ?? "").trim();
+      if (!code || !redirectUri) {
+        return {
+          ok: false,
+          error: { code: "invalid_params", message: "code, redirectUri are required" },
+        };
+      }
+      assertAllowedKakaoRedirectUri(redirectUri);
+
+      const accessToken = await exchangeKakaoCodeForAccessToken({ code, redirectUri });
+      const email = await fetchKakaoAccountEmail(accessToken);
+      const account = await this.accounts.findByEmail(email);
+      if (!account) {
+        throw new WebhookValidationError(
+          "kakao_account_not_found",
+          "카카오 계정 이메일과 일치하는 콜비 계정을 찾을 수 없습니다",
+        );
+      }
+
       const summary = toAccountSummary(account);
       const token = signToken({
         accountId: summary.accountId,

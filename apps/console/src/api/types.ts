@@ -8,6 +8,7 @@
  * 소비 엔드포인트(apps/api):
  *   POST /signup                          → SignupResult (공개, 무인증 — 가입 위저드)
  *   POST /auth/login                      → LoginResponse
+ *   POST /auth/kakao/callback             → LoginResponse
  *   GET  /tenants/:id                     → TenantSummary
  *   PUT  /tenants/:id                     → TenantSummary
  *   GET  /tenants/:id/agent-config        → TenantAgentConfig

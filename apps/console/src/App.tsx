@@ -3,6 +3,7 @@ import { AppShell } from "./components/AppShell";
 import { RequireAuth } from "./components/RequireAuth";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
+import { KakaoCallbackPage } from "./pages/KakaoCallbackPage";
 import { SignupWizardPage } from "./pages/SignupWizardPage";
 import { PendingApprovalPage } from "./pages/PendingApprovalPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -70,6 +71,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="login" element={<LoginPage />} />
+      <Route path="auth/kakao/callback" element={<KakaoCallbackPage />} />
       <Route path="signup" element={<SignupWizardPage />} />
       <Route path="onboarding" element={<Navigate to="/signup" replace />} />
       <Route path="pending" element={<PendingApprovalPage />} />

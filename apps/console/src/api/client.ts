@@ -34,6 +34,7 @@ import type {
   TenantToolId,
   LoginRequest,
   LoginResponse,
+  KakaoLoginCallbackRequest,
   SignupRequest,
   SignupResult,
   AdminAccountSummary,
@@ -74,6 +75,9 @@ export function apiErrorCode(error: unknown): string | null {
 
 export interface ConsoleApi {
   login(req: LoginRequest): Promise<LoginResponse>;
+
+  /** 카카오 로그인 콜백 code 교환 — POST /auth/kakao/callback */
+  kakaoLogin(req: KakaoLoginCallbackRequest): Promise<LoginResponse>;
 
   /** 가입 위저드 3단계 제출(공개, 무인증) — POST /signup */
   signup(req: SignupRequest): Promise<SignupResult>;
@@ -214,6 +218,11 @@ function makeFixtureApi(): ConsoleApi {
     login: () =>
       Promise.reject(
         new ApiError("unsupported", "로그인은 데모 모드에서 지원하지 않아요."),
+      ),
+
+    kakaoLogin: () =>
+      Promise.reject(
+        new ApiError("unsupported", "카카오 로그인은 fetch 모드에서 사용할 수 있어요."),
       ),
 
     /**
@@ -557,6 +566,9 @@ function makeFetchApi(): ConsoleApi {
   const base = (id: string) => `/tenants/${encodeURIComponent(id)}`;
   return {
     login: (req) => http("/auth/login", { method: "POST", body: JSON.stringify(req) }),
+
+    kakaoLogin: (req) =>
+      http("/auth/kakao/callback", { method: "POST", body: JSON.stringify(req) }),
 
     signup: (req) => http("/signup", { method: "POST", body: JSON.stringify(req) }),
 
