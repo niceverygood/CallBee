@@ -338,7 +338,11 @@ export function LandingPage() {
             ⓒ {new Date().getFullYear()} 콜비(Callbee) ·{" "}
             <a className="text-brand-600 hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
               문의하기
-            </a>
+            </a>{" "}
+            ·{" "}
+            <Link className="text-brand-600 hover:underline" to="/privacy">
+              개인정보처리방침
+            </Link>
           </p>
         </div>
       </footer>

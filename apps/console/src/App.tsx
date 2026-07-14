@@ -6,6 +6,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { KakaoCallbackPage } from "./pages/KakaoCallbackPage";
 import { SignupWizardPage } from "./pages/SignupWizardPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 import { PendingApprovalPage } from "./pages/PendingApprovalPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { CallsPage } from "./pages/CallsPage";
@@ -75,6 +76,7 @@ export function App() {
       <Route path="login" element={<LoginPage />} />
       <Route path="auth/kakao/callback" element={<KakaoCallbackPage />} />
       <Route path="signup" element={<SignupWizardPage />} />
+      <Route path="privacy" element={<PrivacyPage />} />
       <Route path="onboarding" element={<Navigate to="/signup" replace />} />
       <Route path="pending" element={<PendingApprovalPage />} />
       {/* 총괄관리자 — 별도 앱 없이 콘솔 통합. platform_admin 계정으로
