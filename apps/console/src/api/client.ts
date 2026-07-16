@@ -214,11 +214,19 @@ function makeFixtureApi(): ConsoleApi {
   };
 
   return {
-    // 데모 모드는 로그인 화면을 건너뛰므로 실제로 호출되지 않는다(인터페이스 충족용).
-    login: () =>
-      Promise.reject(
-        new ApiError("unsupported", "로그인은 데모 모드에서 지원하지 않아요."),
-      ),
+    // 스토어 심사와 제품 데모용 로그인. 실제 백엔드·개인정보에 접근하지 않고
+    // 입력된 이메일을 BoBi 샘플 테넌트 세션에만 연결한다.
+    login: (req) =>
+      delay({
+        account: {
+          accountId: "acct_demo_bobi" as AdminAccountSummary["accountId"],
+          email: req.email.trim(),
+          role: "tenant_admin",
+          tenantId: BOBI_TENANT_ID,
+          createdAt: new Date().toISOString(),
+        },
+        token: "demo-review-token",
+      }),
 
     kakaoLogin: () =>
       Promise.reject(

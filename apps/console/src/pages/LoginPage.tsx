@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Capacitor } from "@capacitor/core";
 import { Link, Navigate } from "react-router-dom";
 import { useLogin } from "../api/hooks";
 import { beginKakaoLogin } from "../lib/kakao-login";
@@ -14,6 +15,7 @@ import { Logo, btnPrimary } from "../components/ui";
  * - platform_admin: 총괄관리자 화면(/admin) — 별도 관리자 앱 없이 콘솔 통합
  */
 export function LoginPage() {
+  const showKakaoLogin = Capacitor.getPlatform() !== "ios";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [roleError, setRoleError] = useState<string | null>(null);
@@ -102,28 +104,34 @@ export function LoginPage() {
           {login.isPending ? "로그인 중…" : "로그인"}
         </button>
 
-        <div className="flex items-center gap-3">
-          <span className="h-px flex-1 bg-ink-100" />
-          <span className="text-xs font-medium text-ink-400">또는</span>
-          <span className="h-px flex-1 bg-ink-100" />
-        </div>
+        {showKakaoLogin ? (
+          <>
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-ink-100" />
+              <span className="text-xs font-medium text-ink-400">또는</span>
+              <span className="h-px flex-1 bg-ink-100" />
+            </div>
 
-        <button
-          type="button"
-          onClick={onKakaoLogin}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#FEE500] px-4 py-2.5 text-sm font-semibold text-[#191919] transition hover:bg-[#f6dd00] focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-1"
-        >
-          <span
-            aria-hidden="true"
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#191919] text-[11px] font-extrabold text-[#FEE500]"
-          >
-            k
-          </span>
-          카카오로 계속하기
-        </button>
+            <button
+              type="button"
+              onClick={onKakaoLogin}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#FEE500] px-4 py-2.5 text-sm font-semibold text-[#191919] transition hover:bg-[#f6dd00] focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-1"
+            >
+              <span
+                aria-hidden="true"
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-[#191919] text-[11px] font-extrabold text-[#FEE500]"
+              >
+                k
+              </span>
+              카카오로 계속하기
+            </button>
+          </>
+        ) : null}
 
         {roleError ? <p className="text-sm text-danger-600">{roleError}</p> : null}
-        {kakaoError ? <p className="text-sm text-danger-600">{kakaoError}</p> : null}
+        {showKakaoLogin && kakaoError ? (
+          <p className="text-sm text-danger-600">{kakaoError}</p>
+        ) : null}
         {!roleError && login.isError ? (
           <p className="text-sm text-danger-600">
             이메일 또는 비밀번호를 확인해 주세요.

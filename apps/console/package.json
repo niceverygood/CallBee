@@ -7,8 +7,10 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm --filter @colli/contracts build && tsc -b && vite build",
-    "android:sync": "pnpm build && cap sync android",
+    "android:sync": "VITE_DATA_SOURCE=fixture pnpm build && cap sync android",
     "android:bundle": "pnpm android:sync && cd android && ./gradlew bundleRelease",
+    "ios:sync": "VITE_DATA_SOURCE=fixture pnpm build && cap sync ios",
+    "ios:archive": "pnpm ios:sync && xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath build/Callbee-Unsigned.xcarchive DEVELOPMENT_TEAM=8XQJ8B58GK CODE_SIGNING_ALLOWED=NO archive",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -16,6 +18,7 @@
   "dependencies": {
     "@capacitor/android": "7.6.7",
     "@capacitor/core": "7.6.7",
+    "@capacitor/ios": "7.6.7",
     "@colli/contracts": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
     "react": "^18.3.1",
